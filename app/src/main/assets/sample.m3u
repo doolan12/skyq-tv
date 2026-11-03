@@ -1,0 +1,29 @@
+#EXTM3U
+# SAMPLE PLAYLIST for testing the app. Channel names are made up.
+# The streams are public test videos (Big Buck Bunny, Apple demo, Tears of Steel), not real TV channels.
+#EXTINF:-1 tvg-id="sample.ent1" tvg-name="Sample Entertainment 1" group-title="UK Entertainment",Sample Entertainment 1
+https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
+#EXTINF:-1 tvg-id="sample.ent2" tvg-name="Sample Entertainment 2" group-title="UK Entertainment",Sample Entertainment 2
+https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8
+#EXTINF:-1 tvg-id="sample.ent3" tvg-name="Sample Comedy" group-title="UK Entertainment",Sample Comedy
+https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8
+#EXTINF:-1 tvg-id="sample.spt1" tvg-name="Sample Sports 1" group-title="UK Sports",Sample Sports 1
+https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
+#EXTINF:-1 tvg-id="sample.spt2" tvg-name="Sample Sports 2" group-title="UK Sports",Sample Sports 2
+https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8
+#EXTINF:-1 tvg-id="sample.spt3" tvg-name="Sample Football" group-title="UK Sports",Sample Football
+https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8
+#EXTINF:-1 tvg-id="sample.mov1" tvg-name="Sample Movies 1" group-title="UK Movies",Sample Movies 1
+https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8
+#EXTINF:-1 tvg-id="sample.mov2" tvg-name="Sample Action" group-title="UK Movies",Sample Action
+https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
+#EXTINF:-1 tvg-id="sample.news1" tvg-name="Sample News" group-title="UK News",Sample News
+https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8
+#EXTINF:-1 tvg-id="sample.doc1" tvg-name="Sample Nature" group-title="UK Documentary",Sample Nature
+https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
+#EXTINF:-1 tvg-id="sample.doc2" tvg-name="Sample History" group-title="UK Documentary",Sample History
+https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8
+#EXTINF:-1 tvg-id="sample.kid1" tvg-name="Sample Kids" group-title="UK Kids",Sample Kids
+https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
+#EXTINF:-1 tvg-id="sample.int1" tvg-name="Sample World" group-title="International",Sample World
+https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8
