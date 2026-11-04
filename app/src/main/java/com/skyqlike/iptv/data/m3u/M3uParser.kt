@@ -34,6 +34,8 @@ object M3uParser {
                     group = pendingAttrs["group-title"]?.takeIf { it.isNotBlank() } ?: "Other",
                     streamUrl = line,
                     epgId = pendingAttrs["tvg-id"]?.takeIf { it.isNotBlank() },
+                    catchupDays = pendingAttrs["catchup-days"]?.toIntOrNull() ?: 0,
+                    xtreamId = pendingAttrs["xtream-id"]?.takeIf { it.isNotBlank() },
                 )
                 pendingName = null
                 pendingAttrs = emptyMap()

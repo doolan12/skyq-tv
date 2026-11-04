@@ -16,6 +16,8 @@ import androidx.compose.ui.Modifier
 import com.skyqlike.iptv.data.FavouritesStore
 import com.skyqlike.iptv.data.PlaylistRepository
 import com.skyqlike.iptv.data.epg.EpgRepository
+import com.skyqlike.iptv.data.catchup.CatchUpRepository
+import com.skyqlike.iptv.data.catchup.CatchUpState
 import com.skyqlike.iptv.data.history.HistoryEntry
 import com.skyqlike.iptv.data.history.WatchHistoryStore
 import com.skyqlike.iptv.data.m3u.M3uParser
@@ -27,6 +29,7 @@ import com.skyqlike.iptv.data.model.toPlayItem
 import com.skyqlike.iptv.data.provider.ProviderStore
 import com.skyqlike.iptv.data.vod.VodRepository
 import com.skyqlike.iptv.data.vod.VodState
+import com.skyqlike.iptv.ui.catchup.CatchUpScreen
 import com.skyqlike.iptv.ui.guide.GuideScreen
 import com.skyqlike.iptv.ui.home.HomeScreen
 import com.skyqlike.iptv.ui.library.LibraryScreen
@@ -49,6 +52,7 @@ class MainActivity : ComponentActivity() {
                 val repo = remember { PlaylistRepository(this@MainActivity) }
                 val epgRepo = remember { EpgRepository(this@MainActivity) }
                 val vodRepo = remember { VodRepository() }
+                val catchUpRepo = remember { CatchUpRepository() }
                 val favStore = remember { FavouritesStore(this@MainActivity) }
                 val historyStore = remember { WatchHistoryStore(this@MainActivity) }
                 val sample = remember {
@@ -63,6 +67,8 @@ class MainActivity : ComponentActivity() {
                 var history by remember { mutableStateOf(historyStore.entries()) }
                 var recentKeys by remember { mutableStateOf(historyStore.recentChannels()) }
                 var vod by remember { mutableStateOf<VodState>(VodState.Idle) }
+                var catchUp by remember { mutableStateOf<CatchUpState>(CatchUpState.Idle) }
+                var catchUpMessage by remember { mutableStateOf<String?>(null) }
                 var status by remember { mutableStateOf("Using the built-in sample playlist.") }
                 var epgStatus by remember { mutableStateOf("") }
                 var busy by remember { mutableStateOf(false) }
@@ -75,6 +81,7 @@ class MainActivity : ComponentActivity() {
                     val force = forceNext
                     forceNext = false
                     vod = VodState.Idle // movies and series get reloaded for the new provider when opened
+                    catchUp = CatchUpState.Idle
                     val provider = providers.firstOrNull { it.id == activeId }
                     var channelsOk = true
 
@@ -193,6 +200,47 @@ class MainActivity : ComponentActivity() {
                                         },
                                         start,
                                     )
+                                },
+                            )
+                        },
+                        catchUpContent = {
+                            CatchUpScreen(
+                                channels = channels,
+                                state = catchUp,
+                                message = catchUpMessage,
+                                onNeedData = {
+                                    if (catchUp is CatchUpState.Idle || catchUp is CatchUpState.Error) {
+                                        catchUp = CatchUpState.Loading
+                                        scope.launch {
+                                            catchUp = epgRepo.loadPast(activeProvider, channels).fold(
+                                                onSuccess = { CatchUpState.Ready(it) },
+                                                onFailure = { CatchUpState.Error(it.message ?: "Couldn't load catch-up.") },
+                                            )
+                                        }
+                                    }
+                                },
+                                onPlay = { ch, show ->
+                                    catchUpMessage = "Opening ${show.title}..."
+                                    scope.launch {
+                                        catchUpRepo.url(activeProvider, ch, show)
+                                            .onSuccess { url ->
+                                                catchUpMessage = null
+                                                playRequest = PlayRequest(
+                                                    listOf(
+                                                        PlayItem(
+                                                            key = "catchup:${ch.id}:${show.start}",
+                                                            title = show.title,
+                                                            subtitle = ch.name,
+                                                            url = url,
+                                                            kind = PlayKind.CATCHUP,
+                                                            imageUrl = ch.logoUrl,
+                                                        )
+                                                    ),
+                                                    0,
+                                                )
+                                            }
+                                            .onFailure { catchUpMessage = it.message ?: "Couldn't open that show." }
+                                    }
                                 },
                             )
                         },

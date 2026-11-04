@@ -96,6 +96,7 @@ fun HomeScreen(
     guideContent: @Composable () -> Unit = {},
     moviesContent: @Composable () -> Unit = {},
     libraryContent: @Composable () -> Unit = {},
+    catchUpContent: @Composable () -> Unit = {},
 ) {
     var section by remember { mutableStateOf("Home") }
     val firstFocus = remember { FocusRequester() }
@@ -121,6 +122,7 @@ fun HomeScreen(
                 "TV Guide" -> guideContent()
                 "Movies" -> moviesContent()
                 "My Library" -> libraryContent()
+                "Catch Up" -> catchUpContent()
                 "Live TV" -> ChannelBrowser("Live TV", channels, "No channels loaded yet. Add a provider in Settings.", onPlay)
                 "Favourites" -> ChannelBrowser(
                     "Favourites",

@@ -8,6 +8,10 @@ data class Channel(
     val group: String,
     val streamUrl: String,
     val epgId: String?,
+    /** How many days back this channel can be replayed. 0 means no catch-up. */
+    val catchupDays: Int = 0,
+    /** The provider's own number for this channel (Xtream logins), needed to build catch-up links. */
+    val xtreamId: String? = null,
 )
 
 enum class PlayKind { LIVE, MOVIE, EPISODE, CATCHUP }

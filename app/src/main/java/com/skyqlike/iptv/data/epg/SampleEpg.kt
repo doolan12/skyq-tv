@@ -15,6 +15,36 @@ object SampleEpg {
 
     private val lengthsMinutes = intArrayOf(30, 60, 90, 60)
 
+    /** Made-up past shows (up to each channel's catch-up days) for testing the Catch Up screen. */
+    fun generatePast(channels: List<Channel>, now: Long): Map<String, List<Programme>> {
+        val out = HashMap<String, List<Programme>>()
+        val slot = 30L * 60_000
+        for (ch in channels) {
+            val key = ch.epgId ?: continue
+            val rnd = Random(key.hashCode().toLong() + 7)
+            var t = ((now - ch.catchupDays * 24L * 60 * 60_000) / slot) * slot + slot
+            var i = rnd.nextInt(titles.size)
+            val list = ArrayList<Programme>()
+            while (true) {
+                val stop = t + lengthsMinutes[rnd.nextInt(lengthsMinutes.size)] * 60_000L
+                if (stop > now) break
+                list += Programme(
+                    channelEpgId = key,
+                    title = titles[i % titles.size],
+                    description = "Sample programme for testing catch-up. This is not a real broadcast.",
+                    genre = ch.group,
+                    start = t,
+                    stop = stop,
+                    iconUrl = null,
+                )
+                t = stop
+                i++
+            }
+            out[key] = list
+        }
+        return out
+    }
+
     fun generate(channels: List<Channel>, from: Long): Map<String, List<Programme>> {
         val out = HashMap<String, List<Programme>>()
         val end = from + 30L * 60 * 60_000

@@ -24,7 +24,7 @@ class PlaylistRepository(private val context: Context) {
 
     data class Loaded(val channels: List<Channel>, val fromCache: Boolean)
 
-    private fun cacheFile(id: String) = File(context.cacheDir, "playlist_$id.m3u")
+    private fun cacheFile(id: String) = File(context.cacheDir, "playlist2_$id.m3u")
 
     fun clearCache(id: String) {
         cacheFile(id).delete()
@@ -97,10 +97,17 @@ class PlaylistRepository(private val context: Context) {
             if (id.isEmpty()) continue
             val name = clean(o.optString("name")).replace(",", " ").ifBlank { "Channel $id" }
             val group = clean(catNames[o.optString("category_id")] ?: "Other")
+            val archiveDays = if (o.optString("tv_archive") == "1") {
+                o.optString("tv_archive_duration").toIntOrNull()?.takeIf { it > 0 } ?: 3
+            } else {
+                0
+            }
             sb.append("#EXTINF:-1")
                 .append(" tvg-id=\"").append(clean(o.optString("epg_channel_id"))).append('"')
                 .append(" tvg-logo=\"").append(clean(o.optString("stream_icon"))).append('"')
                 .append(" group-title=\"").append(group).append('"')
+                .append(" xtream-id=\"").append(id).append('"')
+                .append(" catchup-days=\"").append(archiveDays).append('"')
                 .append(',').append(name).append('\n')
                 .append("$base/live/$user/$pass/$id.m3u8").append('\n')
         }
