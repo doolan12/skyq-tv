@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -68,6 +69,7 @@ fun HomeScreen(
     channels: List<Channel>,
     onPlay: (Channel) -> Unit,
     settingsContent: @Composable () -> Unit = {},
+    guideContent: @Composable () -> Unit = {},
 ) {
     var section by remember { mutableStateOf("Home") }
     val firstFocus = remember { FocusRequester() }
@@ -86,6 +88,8 @@ fun HomeScreen(
                 HomeContent(channels, onPlay)
             } else if (section == "Settings") {
                 settingsContent()
+            } else if (section == "TV Guide") {
+                guideContent()
             } else {
                 ComingLater(section)
             }
@@ -276,13 +280,14 @@ internal fun FocusTile(
     focusedScale: Float = 1.08f,
     backgroundColor: Color = Palette.Panel,
     backgroundBrush: Brush? = null,
+    onFocus: () -> Unit = {},
     content: @Composable BoxScope.() -> Unit,
 ) {
     val shape = RoundedCornerShape(corner)
     Surface(
         onClick = onClick,
         // The TV Surface only reacts to remote buttons. This lets a finger tap work too (phones, touch screens).
-        modifier = modifier.pointerInput(onClick) {
+        modifier = modifier.onFocusChanged { if (it.hasFocus) onFocus() }.pointerInput(onClick) {
             detectTapGestures(onTap = { onClick() })
         },
         shape = ClickableSurfaceDefaults.shape(shape),
@@ -309,7 +314,7 @@ internal fun FocusTile(
 }
 
 /** Gives each channel its own colour so the tiles look different until real artwork exists. */
-private fun tileBrush(seed: String): Brush {
+internal fun tileBrush(seed: String): Brush {
     val hue = ((seed.hashCode() % 360) + 360) % 360
     return Brush.linearGradient(
         listOf(
