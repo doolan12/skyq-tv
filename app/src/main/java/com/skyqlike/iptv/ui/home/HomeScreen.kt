@@ -53,8 +53,9 @@ import com.skyqlike.iptv.ui.theme.Palette
 
 /** The menu down the left side, in the order from the brief. */
 val MenuItems = listOf(
-    "Home", "TV Guide", "Live TV", "Catch Up", "Movies", "Stremio", "Sports",
-    "Entertainment", "Documentaries", "Kids", "My Library", "Favourites", "Settings",
+    "Stremio", "Home", "TV Guide", "Live TV", "All Channels", "Catch Up", "Movies", "Sports",
+    "Entertainment", "News", "Music", "Movie Channels", "Documentaries", "Kids",
+    "UK", "Australia", "Ireland", "USA", "My Library", "Favourites", "Settings",
 )
 
 /** Builds the home screen rows from whatever is loaded. Empty rows are left out. */
@@ -136,6 +137,7 @@ fun HomeScreen(
                 "Catch Up" -> catchUpContent()
                 "Stremio" -> stremioContent()
                 "Live TV" -> ChannelBrowser("Live TV", channels, "No channels loaded yet. Add a provider in Settings.", onPlay, onToggleFavourite)
+                "All Channels" -> ChannelBrowser("All Channels", channels, "No channels loaded yet. Add a provider in Settings.", onPlay, onToggleFavourite)
                 "Favourites" -> ChannelBrowser(
                     "Favourites",
                     channels.filter { it.favKey in favouriteKeys },
@@ -147,10 +149,29 @@ fun HomeScreen(
                 "Entertainment" -> categoryPage("Entertainment", channels, listOf("entertainment", "general"), onPlay, onToggleFavourite)
                 "Documentaries" -> categoryPage("Documentaries", channels, listOf("documentar", "factual", "nature", "science", "history"), onPlay, onToggleFavourite)
                 "Kids" -> categoryPage("Kids", channels, listOf("kid", "child", "cartoon", "family"), onPlay, onToggleFavourite)
+                "News" -> categoryPage("News", channels, listOf("news", "business", "weather"), onPlay, onToggleFavourite)
+                "Music" -> categoryPage("Music", channels, listOf("music", "radio", "mtv", "concert"), onPlay, onToggleFavourite)
+                "Movie Channels" -> categoryPage("Movie Channels", channels, listOf("cinema", "film", "movie", "premiere"), onPlay, onToggleFavourite)
+                "UK" -> categoryPage("UK", channels, listOf("uk=", "gb=", "united kingdom", "british", "england", "scotland", "wales"), onPlay, onToggleFavourite)
+                "Australia" -> categoryPage("Australia", channels, listOf("au=", "aus=", "australia"), onPlay, onToggleFavourite)
+                "Ireland" -> categoryPage("Ireland", channels, listOf("ie=", "irl=", "ireland", "irish"), onPlay, onToggleFavourite)
+                "USA" -> categoryPage("USA", channels, listOf("us=", "usa=", "united states", "american"), onPlay, onToggleFavourite)
                 else -> ComingLater(section)
             }
         }
     }
+}
+
+/**
+ * Does this category name match the word? A word ending in "=" must be a whole word on its own
+ * (so "uk=" matches "UK | Sports" but not "Ukraine"). Any other word just has to appear somewhere in the name.
+ */
+internal fun groupMatches(group: String, word: String): Boolean {
+    if (word.endsWith("=")) {
+        val w = word.dropLast(1)
+        return group.split(Regex("[^A-Za-z0-9]+")).any { it.equals(w, ignoreCase = true) }
+    }
+    return group.contains(word, ignoreCase = true)
 }
 
 /** Picks out the channels whose category name contains any of the given words. */
@@ -162,7 +183,7 @@ private fun categoryPage(
     onPlay: (Channel) -> Unit,
     onToggleFavourite: (Channel) -> Unit,
 ) {
-    val matches = channels.filter { ch -> words.any { ch.group.contains(it, ignoreCase = true) } }
+    val matches = channels.filter { ch -> words.any { groupMatches(ch.group, it) } }
     ChannelBrowser(
         title,
         matches,
