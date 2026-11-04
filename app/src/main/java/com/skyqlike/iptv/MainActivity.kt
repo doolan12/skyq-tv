@@ -10,31 +10,47 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.skyqlike.iptv.data.FavouritesStore
 import com.skyqlike.iptv.data.PlaylistRepository
 import com.skyqlike.iptv.data.epg.EpgRepository
+import com.skyqlike.iptv.data.history.HistoryEntry
+import com.skyqlike.iptv.data.history.WatchHistoryStore
 import com.skyqlike.iptv.data.m3u.M3uParser
 import com.skyqlike.iptv.data.model.Channel
+import com.skyqlike.iptv.data.model.PlayItem
+import com.skyqlike.iptv.data.model.PlayKind
 import com.skyqlike.iptv.data.model.Programme
-import com.skyqlike.iptv.data.model.favKey
+import com.skyqlike.iptv.data.model.toPlayItem
 import com.skyqlike.iptv.data.provider.ProviderStore
+import com.skyqlike.iptv.data.vod.VodRepository
+import com.skyqlike.iptv.data.vod.VodState
 import com.skyqlike.iptv.ui.guide.GuideScreen
 import com.skyqlike.iptv.ui.home.HomeScreen
+import com.skyqlike.iptv.ui.library.LibraryScreen
 import com.skyqlike.iptv.ui.player.PlayerScreen
 import com.skyqlike.iptv.ui.providers.ProvidersScreen
 import com.skyqlike.iptv.ui.theme.SkyTheme
+import com.skyqlike.iptv.ui.vod.VodScreen
+import kotlinx.coroutines.launch
+
+/** What the player has been asked to play: a list of things, and which one to start on. */
+private data class PlayRequest(val items: List<PlayItem>, val start: Int)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             SkyTheme {
+                val scope = rememberCoroutineScope()
                 val store = remember { ProviderStore(this@MainActivity) }
                 val repo = remember { PlaylistRepository(this@MainActivity) }
                 val epgRepo = remember { EpgRepository(this@MainActivity) }
+                val vodRepo = remember { VodRepository() }
                 val favStore = remember { FavouritesStore(this@MainActivity) }
+                val historyStore = remember { WatchHistoryStore(this@MainActivity) }
                 val sample = remember {
                     assets.open("sample.m3u").bufferedReader().use { M3uParser.parse(it.readText()) }
                 }
@@ -44,17 +60,21 @@ class MainActivity : ComponentActivity() {
                 var channels by remember { mutableStateOf<List<Channel>>(sample) }
                 var epg by remember { mutableStateOf<Map<String, List<Programme>>>(emptyMap()) }
                 var favourites by remember { mutableStateOf(favStore.all()) }
+                var history by remember { mutableStateOf(historyStore.entries()) }
+                var recentKeys by remember { mutableStateOf(historyStore.recentChannels()) }
+                var vod by remember { mutableStateOf<VodState>(VodState.Idle) }
                 var status by remember { mutableStateOf("Using the built-in sample playlist.") }
                 var epgStatus by remember { mutableStateOf("") }
                 var busy by remember { mutableStateOf(false) }
                 var reloadTick by remember { mutableIntStateOf(0) }
                 var forceNext by remember { mutableStateOf(false) }
-                var playingIndex by remember { mutableStateOf<Int?>(null) }
+                var playRequest by remember { mutableStateOf<PlayRequest?>(null) }
 
                 // Loads channels, then the TV guide, whenever the provider changes or a refresh is asked for.
                 LaunchedEffect(activeId, reloadTick) {
                     val force = forceNext
                     forceNext = false
+                    vod = VodState.Idle // movies and series get reloaded for the new provider when opened
                     val provider = providers.firstOrNull { it.id == activeId }
                     var channelsOk = true
 
@@ -97,24 +117,87 @@ class MainActivity : ComponentActivity() {
                     busy = false
                 }
 
-                // Starts the player on whichever channel was picked.
-                val play: (Channel) -> Unit = { ch ->
+                val activeProvider = providers.firstOrNull { it.id == activeId }
+
+                // Starts the player on a live channel (the whole channel list is there for channel up/down).
+                val playChannel: (Channel) -> Unit = { ch ->
                     val i = channels.indexOfFirst { it.id == ch.id }
-                    if (i >= 0) playingIndex = i
+                    if (i >= 0) playRequest = PlayRequest(channels.map { it.toPlayItem() }, i)
+                }
+
+                val playHistory: (HistoryEntry) -> Unit = { e ->
+                    playRequest = PlayRequest(
+                        listOf(PlayItem(e.key, e.title, e.subtitle, e.url, e.kind, imageUrl = e.imageUrl)),
+                        0,
+                    )
                 }
 
                 Box(Modifier.fillMaxSize()) {
                     HomeScreen(
                         channels = channels,
-                        onPlay = play,
+                        onPlay = playChannel,
                         favouriteKeys = favourites,
+                        recentKeys = recentKeys,
+                        continueWatching = history.filter { !it.finished && it.positionMs > 10_000 },
+                        onPlayHistory = playHistory,
                         guideContent = {
                             GuideScreen(
                                 channels = channels,
                                 epg = epg,
                                 status = epgStatus,
-                                onPlay = play,
+                                onPlay = playChannel,
                             )
+                        },
+                        moviesContent = {
+                            VodScreen(
+                                state = vod,
+                                onNeedCatalog = {
+                                    if (vod is VodState.Idle || vod is VodState.Error) {
+                                        vod = VodState.Loading
+                                        scope.launch {
+                                            vod = vodRepo.catalog(activeProvider).fold(
+                                                onSuccess = { VodState.Ready(it) },
+                                                onFailure = { VodState.Error(it.message ?: "Couldn't load movies and series.") },
+                                            )
+                                        }
+                                    }
+                                },
+                                loadMovieInfo = { vodRepo.movieInfo(activeProvider, it) },
+                                loadEpisodes = { vodRepo.episodes(activeProvider, it) },
+                                onPlayMovie = { m ->
+                                    playRequest = PlayRequest(
+                                        listOf(
+                                            PlayItem(
+                                                key = "movie:${m.id}",
+                                                title = m.name,
+                                                subtitle = m.year,
+                                                url = m.streamUrl,
+                                                kind = PlayKind.MOVIE,
+                                                imageUrl = m.posterUrl,
+                                            )
+                                        ),
+                                        0,
+                                    )
+                                },
+                                onPlayEpisodes = { series, episodes, start ->
+                                    playRequest = PlayRequest(
+                                        episodes.map { ep ->
+                                            PlayItem(
+                                                key = "ep:${series.id}:${ep.id}",
+                                                title = series.name,
+                                                subtitle = "S${ep.season} E${ep.number}  ${ep.title}",
+                                                url = ep.streamUrl,
+                                                kind = PlayKind.EPISODE,
+                                                imageUrl = ep.imageUrl ?: series.coverUrl,
+                                            )
+                                        },
+                                        start,
+                                    )
+                                },
+                            )
+                        },
+                        libraryContent = {
+                            LibraryScreen(history = history, onPlay = playHistory)
                         },
                         settingsContent = {
                             ProvidersScreen(
@@ -157,17 +240,31 @@ class MainActivity : ComponentActivity() {
                     )
 
                     // The player sits on top of everything. Back returns to the screen you came from.
-                    playingIndex?.let { start ->
+                    playRequest?.let { request ->
                         PlayerScreen(
-                            channels = channels,
-                            startIndex = start,
+                            items = request.items,
+                            startIndex = request.start,
                             epg = epg,
                             favouriteKeys = favourites,
-                            onToggleFavourite = { ch ->
-                                favourites = if (ch.favKey in favourites) favourites - ch.favKey else favourites + ch.favKey
-                                favStore.save(favourites)
+                            startPositionFor = { historyStore.positionFor(it.key) },
+                            onToggleFavourite = { item ->
+                                val key = item.favKey
+                                if (key != null) {
+                                    favourites = if (key in favourites) favourites - key else favourites + key
+                                    favStore.save(favourites)
+                                }
                             },
-                            onClose = { playingIndex = null },
+                            onProgress = { item, position, duration ->
+                                historyStore.update(item, position, duration)
+                                history = historyStore.entries()
+                            },
+                            onChannelWatched = { item ->
+                                item.favKey?.let {
+                                    historyStore.addRecentChannel(it)
+                                    recentKeys = historyStore.recentChannels()
+                                }
+                            },
+                            onClose = { playRequest = null },
                         )
                     }
                 }

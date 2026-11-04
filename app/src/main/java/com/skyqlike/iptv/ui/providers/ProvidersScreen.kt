@@ -203,7 +203,7 @@ private fun ProviderForm(initial: Provider?, onSave: (Provider) -> Unit, onCance
 }
 
 @Composable
-private fun LabeledField(
+internal fun LabeledField(
     label: String,
     value: String,
     password: Boolean = false,
@@ -234,7 +234,7 @@ private fun LabeledField(
 }
 
 @Composable
-private fun ActionButton(
+internal fun ActionButton(
     label: String,
     modifier: Modifier = Modifier,
     accent: Boolean = false,

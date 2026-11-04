@@ -2,6 +2,7 @@ package com.skyqlike.iptv.ui.home
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -12,11 +13,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -33,6 +31,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -42,8 +41,12 @@ import androidx.tv.material3.Border
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
+import com.skyqlike.iptv.data.history.HistoryEntry
 import com.skyqlike.iptv.data.model.Channel
 import com.skyqlike.iptv.data.model.favKey
+import com.skyqlike.iptv.ui.common.HomeTile
+import com.skyqlike.iptv.ui.common.Rail
+import com.skyqlike.iptv.ui.common.RailRow
 import com.skyqlike.iptv.ui.theme.Palette
 
 /** The menu down the left side, in the order from the brief. */
@@ -52,26 +55,46 @@ val MenuItems = listOf(
     "Entertainment", "Documentaries", "Kids", "My Library", "Favourites", "Settings",
 )
 
-/** One row of tiles on the home screen. */
-data class Rail(val title: String, val channels: List<Channel>)
+/** Builds the home screen rows from whatever is loaded. Empty rows are left out. */
+fun buildRails(
+    channels: List<Channel>,
+    favouriteKeys: Set<String>,
+    recentKeys: List<String>,
+    continueWatching: List<HistoryEntry>,
+    onPlay: (Channel) -> Unit,
+    onPlayHistory: (HistoryEntry) -> Unit,
+): List<Rail> {
+    fun channelTile(ch: Channel) = HomeTile(ch.id, ch.name, ch.group, ch.logoUrl, fit = true) { onPlay(ch) }
+    val byKey = channels.associateBy { it.favKey }
 
-/** Builds the home screen rows from whatever channels are loaded. Empty rows are left out. */
-fun buildRails(channels: List<Channel>, favouriteKeys: Set<String> = emptySet()): List<Rail> = listOf(
-    Rail("Currently Popular", channels.take(8)),
-    Rail("Continue Watching", channels.drop(2).take(4)),
-    Rail("Live Sports", channels.filter { it.group.contains("Sport", ignoreCase = true) }),
-    Rail("Popular Movies", channels.filter { it.group.contains("Movie", ignoreCase = true) }),
-    Rail("Favourite Channels", channels.filter { it.favKey in favouriteKeys }),
-    Rail("Recently Added", channels.reversed().take(8)),
-).filter { it.channels.isNotEmpty() }
+    return listOf(
+        Rail(
+            "Continue Watching",
+            continueWatching.map { e ->
+                HomeTile(e.key, e.title, e.subtitle, e.imageUrl) { onPlayHistory(e) }
+            },
+        ),
+        Rail("Currently Popular", channels.take(8).map(::channelTile)),
+        Rail("Recently Watched", recentKeys.mapNotNull { byKey[it] }.map(::channelTile)),
+        Rail("Live Sports", channels.filter { it.group.contains("Sport", ignoreCase = true) }.map(::channelTile)),
+        Rail("Popular Movies", channels.filter { it.group.contains("Movie", ignoreCase = true) }.map(::channelTile)),
+        Rail("Favourite Channels", channels.filter { it.favKey in favouriteKeys }.map(::channelTile)),
+        Rail("Recently Added", channels.reversed().take(8).map(::channelTile)),
+    ).filter { it.tiles.isNotEmpty() }
+}
 
 @Composable
 fun HomeScreen(
     channels: List<Channel>,
     onPlay: (Channel) -> Unit,
+    favouriteKeys: Set<String> = emptySet(),
+    recentKeys: List<String> = emptyList(),
+    continueWatching: List<HistoryEntry> = emptyList(),
+    onPlayHistory: (HistoryEntry) -> Unit = {},
     settingsContent: @Composable () -> Unit = {},
     guideContent: @Composable () -> Unit = {},
-    favouriteKeys: Set<String> = emptySet(),
+    moviesContent: @Composable () -> Unit = {},
+    libraryContent: @Composable () -> Unit = {},
 ) {
     var section by remember { mutableStateOf("Home") }
     val firstFocus = remember { FocusRequester() }
@@ -86,14 +109,18 @@ fun HomeScreen(
         SideMenu(selected = section, onSelect = { section = it }, firstFocus = firstFocus)
 
         Box(Modifier.weight(1f).fillMaxSize()) {
-            if (section == "Home") {
-                HomeContent(channels, favouriteKeys, onPlay)
-            } else if (section == "Settings") {
-                settingsContent()
-            } else if (section == "TV Guide") {
-                guideContent()
-            } else {
-                ComingLater(section)
+            when (section) {
+                "Home" -> {
+                    val rails = remember(channels, favouriteKeys, recentKeys, continueWatching) {
+                        buildRails(channels, favouriteKeys, recentKeys, continueWatching, onPlay, onPlayHistory)
+                    }
+                    HomeContent(rails, channels.firstOrNull(), onPlay)
+                }
+                "Settings" -> settingsContent()
+                "TV Guide" -> guideContent()
+                "Movies" -> moviesContent()
+                "My Library" -> libraryContent()
+                else -> ComingLater(section)
             }
         }
     }
@@ -142,35 +169,17 @@ private fun SideMenu(selected: String, onSelect: (String) -> Unit, firstFocus: F
 }
 
 @Composable
-private fun HomeContent(channels: List<Channel>, favouriteKeys: Set<String>, onPlay: (Channel) -> Unit) {
-    val rails = remember(channels, favouriteKeys) { buildRails(channels, favouriteKeys) }
-
+private fun HomeContent(rails: List<Rail>, featured: Channel?, onPlay: (Channel) -> Unit) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 40.dp),
         verticalArrangement = Arrangement.spacedBy(22.dp),
     ) {
         item {
-            channels.firstOrNull()?.let { FeaturedBanner(it, onPlay) }
+            featured?.let { FeaturedBanner(it, onPlay) }
         }
-        items(rails) { rail ->
-            Column {
-                Text(
-                    rail.title,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Palette.TextPrimary,
-                    modifier = Modifier.padding(start = 36.dp, bottom = 10.dp),
-                )
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 36.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    items(rail.channels, key = { rail.title + it.id }) { ch ->
-                        ChannelTile(ch, onPlay)
-                    }
-                }
-            }
+        items(rails, key = { it.title }) { rail ->
+            RailRow(rail)
         }
     }
 }
@@ -221,36 +230,6 @@ private fun FeaturedBanner(channel: Channel, onPlay: (Channel) -> Unit) {
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun ChannelTile(channel: Channel, onPlay: (Channel) -> Unit) {
-    Column(Modifier.width(250.dp)) {
-        FocusTile(
-            onClick = { onPlay(channel) },
-            modifier = Modifier.fillMaxWidth().height(140.dp),
-            corner = 12.dp,
-            backgroundBrush = tileBrush(channel.name),
-        ) {
-            Text(
-                channel.name.take(1).uppercase(),
-                fontSize = 54.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White.copy(alpha = 0.35f),
-                modifier = Modifier.align(Alignment.Center),
-            )
-        }
-        Text(
-            channel.name,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Medium,
-            color = Palette.TextPrimary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 8.dp, start = 2.dp),
-        )
-        Text(channel.group, fontSize = 13.sp, color = Palette.TextSecondary, maxLines = 1)
     }
 }
 
@@ -315,7 +294,7 @@ internal fun FocusTile(
     }
 }
 
-/** Gives each channel its own colour so the tiles look different until real artwork exists. */
+/** Gives each title its own colour so tiles look different until real artwork loads. */
 internal fun tileBrush(seed: String): Brush {
     val hue = ((seed.hashCode() % 360) + 360) % 360
     return Brush.linearGradient(

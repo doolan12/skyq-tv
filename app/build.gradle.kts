@@ -40,6 +40,9 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
+    // Loads poster and logo pictures from the internet
+    implementation("io.coil-kt:coil-compose:2.7.0")
+
     // Video playback (the same engine the big streaming apps use)
     val media3 = "1.4.1"
     implementation("androidx.media3:media3-exoplayer:$media3")

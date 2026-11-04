@@ -47,7 +47,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -67,9 +66,9 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Text
-import com.skyqlike.iptv.data.model.Channel
+import com.skyqlike.iptv.data.model.PlayItem
+import com.skyqlike.iptv.data.model.PlayKind
 import com.skyqlike.iptv.data.model.Programme
-import com.skyqlike.iptv.data.model.favKey
 import com.skyqlike.iptv.ui.home.FocusTile
 import com.skyqlike.iptv.ui.theme.Palette
 import kotlinx.coroutines.delay
@@ -90,36 +89,41 @@ private data class TrackOption(val label: String, val group: Tracks.Group, val i
 private data class PickerRow(val label: String, val selected: Boolean, val onPick: () -> Unit)
 
 /**
- * The full-screen TV player.
- * Remote: Up/Down change channel, Left/Right skip 10 seconds, OK shows the controls, Back leaves.
+ * The full-screen TV player. Plays live channels, movies, episodes and catch-up shows.
+ * Remote: Up/Down change channel (live only), Left/Right skip 10 seconds, OK shows the controls, Back leaves.
  * Touch: tap the picture to show or hide the controls.
  */
 @Composable
 fun PlayerScreen(
-    channels: List<Channel>,
+    items: List<PlayItem>,
     startIndex: Int,
     epg: Map<String, List<Programme>>,
     favouriteKeys: Set<String>,
-    onToggleFavourite: (Channel) -> Unit,
+    startPositionFor: (PlayItem) -> Long,
+    onToggleFavourite: (PlayItem) -> Unit,
+    onProgress: (PlayItem, Long, Long) -> Unit,
+    onChannelWatched: (PlayItem) -> Unit,
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var index by remember { mutableIntStateOf(startIndex.coerceIn(0, channels.lastIndex)) }
+    var index by remember { mutableIntStateOf(startIndex.coerceIn(0, items.lastIndex)) }
     var previousIndex by remember { mutableIntStateOf(-1) }
     var overlay by remember { mutableStateOf(true) }
     var overlayTick by remember { mutableIntStateOf(0) }
     var buffering by remember { mutableStateOf(true) }
     var wantPlay by remember { mutableStateOf(true) }
     var seekable by remember { mutableStateOf(false) }
-    var live by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var tracks by remember { mutableStateOf(Tracks.EMPTY) }
     var resizeIndex by remember { mutableIntStateOf(0) }
     var picker by remember { mutableStateOf<Int?>(null) } // C.TRACK_TYPE_AUDIO or C.TRACK_TYPE_TEXT
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var positionMs by remember { mutableLongStateOf(0L) }
+    var durationMs by remember { mutableLongStateOf(0L) }
+    var endedTick by remember { mutableIntStateOf(0) }
 
     val attempts = remember { intArrayOf(0) }
     val token = remember { intArrayOf(0) }
@@ -136,6 +140,15 @@ fun PlayerScreen(
             .build()
     }
 
+    // Remembers how far through a movie or episode we are, so it can be resumed later.
+    fun saveProgress(finished: Boolean = false) {
+        val cur = items[index]
+        if (cur.kind != PlayKind.MOVIE && cur.kind != PlayKind.EPISODE) return
+        val dur = exo.duration
+        if (dur == C.TIME_UNSET || dur <= 0L) return
+        onProgress(cur, if (finished) dur else exo.currentPosition, dur)
+    }
+
     // Listens to the player: buffering, errors (with automatic reconnecting), audio/subtitle tracks.
     DisposableEffect(exo) {
         val listener = object : Player.Listener {
@@ -146,13 +159,12 @@ fun PlayerScreen(
                     failed = false
                     statusMessage = null
                 }
+                if (state == Player.STATE_ENDED) endedTick++
                 seekable = exo.isCurrentMediaItemSeekable
-                live = exo.isCurrentMediaItemLive
             }
 
             override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
                 seekable = exo.isCurrentMediaItemSeekable
-                live = exo.isCurrentMediaItemLive
             }
 
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
@@ -173,7 +185,7 @@ fun PlayerScreen(
                     scope.launch {
                         delay(2000L * n)
                         if (myToken == token[0]) {
-                            exo.seekToDefaultPosition()
+                            if (items[index].kind == PlayKind.LIVE) exo.seekToDefaultPosition()
                             exo.prepare()
                             exo.play()
                         }
@@ -181,13 +193,14 @@ fun PlayerScreen(
                 } else {
                     failed = true
                     buffering = false
-                    statusMessage = "This channel isn't playing. The stream may be offline."
+                    statusMessage = "This isn't playing. The stream may be offline."
                     overlay = true
                 }
             }
         }
         exo.addListener(listener)
         onDispose {
+            saveProgress()
             exo.removeListener(listener)
             exo.release()
         }
@@ -197,24 +210,32 @@ fun PlayerScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) exo.pause()
+            if (event == Lifecycle.Event.ON_STOP) {
+                saveProgress()
+                exo.pause()
+            }
             if (event == Lifecycle.Event.ON_START) exo.play()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // Start (or switch to) the chosen channel.
+    // Start (or switch to) the chosen item.
     LaunchedEffect(index) {
-        val ch = channels[index]
+        val cur = items[index]
         token[0]++
         attempts[0] = 0
         failed = false
         statusMessage = null
         buffering = true
-        exo.setMediaItem(MediaItem.fromUri(ch.streamUrl))
+        positionMs = 0L
+        durationMs = 0L
+        val mediaItem = MediaItem.fromUri(cur.url)
+        val resumeAt = if (cur.kind == PlayKind.MOVIE || cur.kind == PlayKind.EPISODE) startPositionFor(cur) else 0L
+        if (resumeAt > 0L) exo.setMediaItem(mediaItem, resumeAt) else exo.setMediaItem(mediaItem)
         exo.prepare()
         exo.play()
+        if (cur.kind == PlayKind.LIVE) onChannelWatched(cur)
         overlay = true
         overlayTick++
     }
@@ -223,6 +244,20 @@ fun PlayerScreen(
         while (true) {
             delay(15_000)
             nowMs = System.currentTimeMillis()
+        }
+    }
+
+    // Keeps the position bar moving, and saves progress every 10 seconds.
+    LaunchedEffect(index) {
+        var ticks = 0
+        while (true) {
+            delay(1000)
+            ticks++
+            if (items[index].kind != PlayKind.LIVE) {
+                positionMs = exo.currentPosition
+                durationMs = exo.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0L
+                if (ticks % 10 == 0) saveProgress()
+            }
         }
     }
 
@@ -252,19 +287,32 @@ fun PlayerScreen(
         if (picker != null) picker = null else onClose()
     }
 
-    val channel = channels[index]
-    val listForChannel = channel.epgId?.let { epg[it] }
+    val item = items[index]
+    val isLive = item.kind == PlayKind.LIVE
+    val listForChannel = if (isLive) item.epgId?.let { epg[it] } else null
     val currentProg = listForChannel?.firstOrNull { nowMs >= it.start && nowMs < it.stop }
     val nextProg = listForChannel?.firstOrNull { it.start >= (currentProg?.stop ?: nowMs) }
-    val isFavourite = channel.favKey in favouriteKeys
+    val isFavourite = item.favKey != null && item.favKey in favouriteKeys
 
     fun bump() {
         overlayTick++
     }
 
-    fun zap(delta: Int) {
-        previousIndex = index
-        index = (index + delta + channels.size) % channels.size
+    fun step(delta: Int): Boolean {
+        if (items.size < 2) return false
+        return if (items[index].kind == PlayKind.LIVE) {
+            previousIndex = index
+            index = (index + delta + items.size) % items.size
+            true
+        } else {
+            val n = index + delta
+            if (n in items.indices) {
+                index = n
+                true
+            } else {
+                false
+            }
+        }
     }
 
     fun lastChannel() {
@@ -285,6 +333,15 @@ fun PlayerScreen(
         if (exo.playWhenReady) exo.pause() else exo.play()
     }
 
+    // When a movie or episode ends: remember it as finished, then go on to the next episode if there is one.
+    LaunchedEffect(endedTick) {
+        if (endedTick > 0) {
+            saveProgress(finished = true)
+            val cur = items[index]
+            if (cur.kind == PlayKind.EPISODE && index < items.lastIndex) index++ else overlay = true
+        }
+    }
+
     val handleKey: (KeyEvent) -> Boolean = handle@{ ev ->
         if (ev.type != KeyEventType.KeyDown) return@handle false
         bump()
@@ -294,14 +351,14 @@ fun PlayerScreen(
             Key.MediaPause -> { exo.pause(); return@handle true }
             Key.MediaFastForward -> { seekBy(30_000); return@handle true }
             Key.MediaRewind -> { seekBy(-30_000); return@handle true }
-            Key.ChannelUp -> { zap(1); return@handle true }
-            Key.ChannelDown -> { zap(-1); return@handle true }
+            Key.ChannelUp -> { return@handle step(1) }
+            Key.ChannelDown -> { return@handle step(-1) }
             else -> Unit
         }
         if (!overlay && picker == null) {
             when (ev.key) {
-                Key.DirectionUp -> { zap(1); true }
-                Key.DirectionDown -> { zap(-1); true }
+                Key.DirectionUp -> if (isLive) step(1) else false
+                Key.DirectionDown -> if (isLive) step(-1) else false
                 Key.DirectionLeft -> seekBy(-10_000)
                 Key.DirectionRight -> seekBy(10_000)
                 Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> { overlay = true; true }
@@ -367,7 +424,7 @@ fun PlayerScreen(
                         failed = false
                         statusMessage = null
                         buffering = true
-                        exo.seekToDefaultPosition()
+                        if (isLive) exo.seekToDefaultPosition()
                         exo.prepare()
                         exo.play()
                     }
@@ -387,7 +444,7 @@ fun PlayerScreen(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
-                        "${index + 1}  ${channel.name}",
+                        if (isLive && items.size > 1) "${index + 1}  ${item.title}" else item.title,
                         fontSize = 26.sp,
                         fontWeight = FontWeight.Bold,
                         color = Palette.TextPrimary,
@@ -395,7 +452,7 @@ fun PlayerScreen(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),
                     )
-                    if (live) {
+                    if (isLive) {
                         Text(
                             "LIVE",
                             fontSize = 13.sp,
@@ -406,6 +463,9 @@ fun PlayerScreen(
                                 .padding(horizontal = 8.dp, vertical = 2.dp),
                         )
                     }
+                }
+                if (!isLive && item.subtitle.isNotBlank()) {
+                    Text(item.subtitle, fontSize = 16.sp, color = Palette.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 if (currentProg != null) {
                     Text(
@@ -419,7 +479,7 @@ fun PlayerScreen(
                     Box(Modifier.fillMaxWidth().height(4.dp).background(Color(0x33FFFFFF))) {
                         Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(Palette.Accent))
                     }
-                } else {
+                } else if (isLive) {
                     Text("No programme information", fontSize = 15.sp, color = Palette.TextSecondary)
                 }
                 if (nextProg != null) {
@@ -430,6 +490,18 @@ fun PlayerScreen(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                }
+                // Movies, episodes and catch-up: how far through, like a progress bar.
+                if (!isLive && durationMs > 0L) {
+                    Text(
+                        "${formatTime(positionMs)} / ${formatTime(durationMs)}",
+                        fontSize = 15.sp,
+                        color = Palette.TextPrimary,
+                    )
+                    val frac = (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
+                    Box(Modifier.fillMaxWidth().height(4.dp).background(Color(0x33FFFFFF))) {
+                        Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(Palette.Accent))
+                    }
                 }
 
                 Row(
@@ -445,15 +517,23 @@ fun PlayerScreen(
                         PlayerButton("-10s", Modifier.width(80.dp)) { bump(); seekBy(-10_000) }
                         PlayerButton("+10s", Modifier.width(80.dp)) { bump(); seekBy(10_000) }
                     }
-                    PlayerButton("Prev ch", Modifier.width(110.dp)) { zap(-1) }
-                    PlayerButton("Next ch", Modifier.width(110.dp)) { zap(1) }
-                    if (previousIndex >= 0 && previousIndex != index) {
-                        PlayerButton("Last ch", Modifier.width(110.dp)) { lastChannel() }
+                    if (isLive && items.size > 1) {
+                        PlayerButton("Prev ch", Modifier.width(110.dp)) { step(-1) }
+                        PlayerButton("Next ch", Modifier.width(110.dp)) { step(1) }
+                        if (previousIndex >= 0 && previousIndex != index) {
+                            PlayerButton("Last ch", Modifier.width(110.dp)) { lastChannel() }
+                        }
                     }
-                    PlayerButton(
-                        if (isFavourite) "Remove fav" else "Add fav",
-                        Modifier.width(130.dp),
-                    ) { bump(); onToggleFavourite(channel) }
+                    if (item.kind == PlayKind.EPISODE) {
+                        if (index > 0) PlayerButton("Prev ep", Modifier.width(110.dp)) { step(-1) }
+                        if (index < items.lastIndex) PlayerButton("Next ep", Modifier.width(110.dp)) { step(1) }
+                    }
+                    if (item.favKey != null) {
+                        PlayerButton(
+                            if (isFavourite) "Remove fav" else "Add fav",
+                            Modifier.width(130.dp),
+                        ) { bump(); onToggleFavourite(item) }
+                    }
                     PlayerButton("Audio", Modifier.width(100.dp)) { picker = C.TRACK_TYPE_AUDIO }
                     PlayerButton("Subtitles", Modifier.width(120.dp)) { picker = C.TRACK_TYPE_TEXT }
                     PlayerButton("Aspect: ${ResizeLabels[resizeIndex]}", Modifier.width(160.dp)) {
@@ -501,7 +581,7 @@ fun PlayerScreen(
                     color = Palette.TextPrimary,
                 )
                 if (rows.isEmpty()) {
-                    Text("This channel has no other audio tracks.", fontSize = 15.sp, color = Palette.TextSecondary)
+                    Text("This one has no other audio tracks.", fontSize = 15.sp, color = Palette.TextSecondary)
                 } else {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         itemsIndexed(rows) { i, row ->
@@ -516,7 +596,7 @@ fun PlayerScreen(
                     }
                 }
                 if (type == C.TRACK_TYPE_TEXT && options.isEmpty()) {
-                    Text("This channel has no subtitles.", fontSize = 14.sp, color = Palette.TextSecondary)
+                    Text("This one has no subtitles.", fontSize = 14.sp, color = Palette.TextSecondary)
                 }
             }
         }
@@ -546,6 +626,14 @@ private fun PlayerButton(
             modifier = Modifier.align(Alignment.Center).padding(horizontal = 10.dp),
         )
     }
+}
+
+private fun formatTime(ms: Long): String {
+    val totalSeconds = (ms / 1000).coerceAtLeast(0)
+    val h = totalSeconds / 3600
+    val m = (totalSeconds % 3600) / 60
+    val s = totalSeconds % 60
+    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
 
 private fun trackOptions(tracks: Tracks, type: Int): List<TrackOption> {
