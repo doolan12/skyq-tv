@@ -166,7 +166,9 @@ fun GuideScreen(
                                             gridStart = gridStart,
                                             nowMs = nowMs,
                                             timeFormat = timeFormat,
+                                            isSelected = selected?.channel == channel && selected?.programme == p,
                                             onSelect = { selected = it },
+                                            onWatch = { onPlay(channel) },
                                         )
                                     }
                                 }
@@ -201,7 +203,9 @@ private fun ProgrammeCell(
     gridStart: Long,
     nowMs: Long,
     timeFormat: SimpleDateFormat,
+    isSelected: Boolean,
     onSelect: (Selection) -> Unit,
+    onWatch: () -> Unit,
 ) {
     val startMin = ((programme.start - gridStart) / 60_000f).coerceAtLeast(0f)
     val endMin = ((programme.stop - gridStart) / 60_000f).coerceAtMost(EpgTime.GUIDE_HOURS * 60f)
@@ -211,8 +215,10 @@ private fun ProgrammeCell(
     val progress = ((nowMs - programme.start).toFloat() / (programme.stop - programme.start)).coerceIn(0f, 1f)
     val select = { onSelect(Selection(channel, programme)) }
 
+    // First press picks the programme (the remote does this just by landing on it).
+    // Pressing OK again, or tapping it a second time, starts watching.
     FocusTile(
-        onClick = select,
+        onClick = { if (isSelected) onWatch() else select() },
         onFocus = select,
         modifier = Modifier
             .offset(x = DpPerMinute * startMin)
@@ -316,19 +322,12 @@ private fun InfoPanel(
                     )
                 }
                 if (nowMs >= p.start && nowMs < p.stop) {
-                    FocusTile(
-                        onClick = { onPlay(sel.channel) },
-                        modifier = Modifier.width(170.dp).height(42.dp),
-                        corner = 21.dp,
-                        backgroundColor = Palette.Accent,
-                    ) {
-                        Text(
-                            "Watch Now",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.align(Alignment.Center),
-                        )
-                    }
+                    Text(
+                        "On now  |  Press OK (or tap twice) to watch",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Palette.Accent,
+                    )
                 } else {
                     Text(
                         if (nowMs < p.start) "Starts at ${timeFormat.format(Date(p.start))}" else "Finished",

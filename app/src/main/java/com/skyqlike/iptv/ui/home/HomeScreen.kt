@@ -72,7 +72,7 @@ import com.skyqlike.iptv.ui.theme.Palette
 
 /** The menu down the left side, in the order from the brief. */
 val MenuItems = listOf(
-    "Stremio", "Home", "TV Guide", "Live TV", "All Channels", "Catch Up", "Movies", "Sports",
+    "Stremio", "Home", "TV Guide", "All Channels", "Catch Up", "Movies", "Sports",
     "Entertainment", "News", "Music", "Movie Channels", "Documentaries", "Kids",
     "UK", "Australia", "Ireland", "USA", "My Library", "Favourites", "Settings",
 )
@@ -217,7 +217,6 @@ fun HomeScreen(
                 "My Library" -> libraryContent()
                 "Catch Up" -> catchUpContent()
                 "Stremio" -> stremioContent()
-                "Live TV" -> ChannelBrowser("Live TV", channels, "No channels loaded yet. Add a provider in Settings.", onPlay, onToggleFavourite)
                 "All Channels" -> ChannelBrowser("All Channels", channels, "No channels loaded yet. Add a provider in Settings.", onPlay, onToggleFavourite)
                 "Favourites" -> ChannelBrowser(
                     "Favourites",
@@ -319,7 +318,6 @@ private fun menuEntries(categoriesOpen: Boolean): List<MenuEntry> = buildList {
     add(MenuHeader("LIVE TV"))
     add(MenuLink("Home", "home"))
     add(MenuLink("TV Guide", "guide"))
-    add(MenuLink("Live TV", "live"))
     add(MenuLink("All Channels", "all"))
     add(MenuLink("Catch Up", "catchup"))
     add(MenuHeader("ON DEMAND"))
