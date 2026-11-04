@@ -10,6 +10,9 @@ data class Channel(
     val epgId: String?,
 )
 
+/** The key used to remember a favourite channel (name plus stream address, so it's unique). */
+val Channel.favKey: String get() = "$name|$streamUrl"
+
 /** One TV show in the guide. Times are milliseconds since 1970 (UTC). */
 data class Programme(
     val channelEpgId: String,

@@ -43,6 +43,7 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.skyqlike.iptv.data.model.Channel
+import com.skyqlike.iptv.data.model.favKey
 import com.skyqlike.iptv.ui.theme.Palette
 
 /** The menu down the left side, in the order from the brief. */
@@ -55,12 +56,12 @@ val MenuItems = listOf(
 data class Rail(val title: String, val channels: List<Channel>)
 
 /** Builds the home screen rows from whatever channels are loaded. Empty rows are left out. */
-fun buildRails(channels: List<Channel>): List<Rail> = listOf(
+fun buildRails(channels: List<Channel>, favouriteKeys: Set<String> = emptySet()): List<Rail> = listOf(
     Rail("Currently Popular", channels.take(8)),
     Rail("Continue Watching", channels.drop(2).take(4)),
     Rail("Live Sports", channels.filter { it.group.contains("Sport", ignoreCase = true) }),
     Rail("Popular Movies", channels.filter { it.group.contains("Movie", ignoreCase = true) }),
-    Rail("Favourite Channels", channels.take(5)),
+    Rail("Favourite Channels", channels.filter { it.favKey in favouriteKeys }),
     Rail("Recently Added", channels.reversed().take(8)),
 ).filter { it.channels.isNotEmpty() }
 
@@ -70,6 +71,7 @@ fun HomeScreen(
     onPlay: (Channel) -> Unit,
     settingsContent: @Composable () -> Unit = {},
     guideContent: @Composable () -> Unit = {},
+    favouriteKeys: Set<String> = emptySet(),
 ) {
     var section by remember { mutableStateOf("Home") }
     val firstFocus = remember { FocusRequester() }
@@ -85,7 +87,7 @@ fun HomeScreen(
 
         Box(Modifier.weight(1f).fillMaxSize()) {
             if (section == "Home") {
-                HomeContent(channels, onPlay)
+                HomeContent(channels, favouriteKeys, onPlay)
             } else if (section == "Settings") {
                 settingsContent()
             } else if (section == "TV Guide") {
@@ -140,8 +142,8 @@ private fun SideMenu(selected: String, onSelect: (String) -> Unit, firstFocus: F
 }
 
 @Composable
-private fun HomeContent(channels: List<Channel>, onPlay: (Channel) -> Unit) {
-    val rails = remember(channels) { buildRails(channels) }
+private fun HomeContent(channels: List<Channel>, favouriteKeys: Set<String>, onPlay: (Channel) -> Unit) {
+    val rails = remember(channels, favouriteKeys) { buildRails(channels, favouriteKeys) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
