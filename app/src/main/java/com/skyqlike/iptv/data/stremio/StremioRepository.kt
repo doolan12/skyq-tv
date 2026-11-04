@@ -365,8 +365,32 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
                     torrents += pair.second
                 }
             }
-            StremioStreams(playable, torrents, failed)
+            // Best first, so quick play (and the top of the list) picks the most watchable one.
+            StremioStreams(playable.sortedByDescending { score(it) }, torrents, failed)
         }
+
+    /**
+     * A rough "how good is this link" score from its name and description.
+     * 1080p is favoured because it plays smoothly on nearly every TV; 4K comes next, then 720p.
+     * Cinema recordings and Dolby Vision (which many sets can't show properly) are pushed down.
+     */
+    private fun score(s: StremioStream): Int {
+        val t = (s.name + " " + s.description).lowercase()
+        var n = when {
+            "1080" in t -> 400
+            "2160" in t || "4k" in t || "uhd" in t -> 300
+            "720" in t -> 200
+            "480" in t -> 100
+            else -> 150
+        }
+        if (Regex("\\b(cam|camrip|hdcam|ts|telesync|tc|hdts)\\b").containsMatchIn(t)) n -= 350
+        if ("dolby vision" in t || Regex("\\bdv\\b").containsMatchIn(t)) n -= 60
+        if ("remux" in t) n -= 20
+        if (Regex("\\b(h264|x264|avc)\\b").containsMatchIn(t)) n += 15
+        // A bigger file within the same quality is usually a better picture, but only a nudge.
+        s.sizeBytes?.let { n += (it / 2_000_000_000L).toInt().coerceAtMost(8) }
+        return n
+    }
 
     private fun fetchStreams(addon: StremioAddon, type: String, id: String): Pair<List<StremioStream>, Int> {
         val url = "${addon.baseUrl}/stream/${enc(type)}/${enc(id)}.json"

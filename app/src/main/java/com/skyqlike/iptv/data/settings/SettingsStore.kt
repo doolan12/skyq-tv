@@ -12,7 +12,7 @@ data class AppSettings(
     /** Two-letter language code like "en", or empty for "whatever the stream starts with". */
     val audioLang: String = "",
     /** Start the first stream the addons offer, instead of showing the list. */
-    val quickPlay: Boolean = false,
+    val quickPlay: Boolean = true,
     /** Show a Skip Intro button where the community database knows the times. */
     val skipIntro: Boolean = true,
 )
@@ -27,7 +27,7 @@ class SettingsStore(context: Context) {
         resume = prefs.getBoolean("resume", true),
         subtitlesOn = prefs.getBoolean("subtitlesOn", false),
         audioLang = prefs.getString("audioLang", "") ?: "",
-        quickPlay = prefs.getBoolean("quickPlay", false),
+        quickPlay = prefs.getBoolean("quickPlay", true),
         skipIntro = prefs.getBoolean("skipIntro", true),
     )
 

@@ -365,8 +365,14 @@ private fun TopBar(
             letterSpacing = 2.sp,
             modifier = Modifier.padding(end = 20.dp),
         )
-        TabNames.forEachIndexed { i, label -> NavItem(label, tab == i) { onTab(i) } }
-        Spacer(Modifier.weight(1f))
+        // The tabs scroll sideways if the screen is too narrow, so Settings and the profile never get pushed off.
+        Row(
+            Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            TabNames.forEachIndexed { i, label -> NavItem(label, tab == i) { onTab(i) } }
+        }
         NavItem("Settings", false) { onSettings() }
         FocusTile(
             onClick = onSwitchProfile,
