@@ -104,6 +104,10 @@ fun PlayerScreen(
     onProgress: (PlayItem, Long, Long) -> Unit,
     onChannelWatched: (PlayItem) -> Unit,
     onClose: () -> Unit,
+    aspectDefault: Int = 0,
+    autoReconnect: Boolean = true,
+    subtitlesOn: Boolean = false,
+    audioLang: String = "",
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -118,12 +122,14 @@ fun PlayerScreen(
     var failed by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var tracks by remember { mutableStateOf(Tracks.EMPTY) }
-    var resizeIndex by remember { mutableIntStateOf(0) }
+    var resizeIndex by remember { mutableIntStateOf(aspectDefault.coerceIn(0, ResizeModes.lastIndex)) }
     var picker by remember { mutableStateOf<Int?>(null) } // C.TRACK_TYPE_AUDIO or C.TRACK_TYPE_TEXT
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
     var endedTick by remember { mutableIntStateOf(0) }
+    var digits by remember { mutableStateOf("") } // channel number being typed on the remote
+    var digitTick by remember { mutableIntStateOf(0) }
 
     val attempts = remember { intArrayOf(0) }
     val token = remember { intArrayOf(0) }
@@ -138,6 +144,13 @@ fun PlayerScreen(
         ExoPlayer.Builder(context)
             .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(http))
             .build()
+            .also { player ->
+                // Starting subtitle / audio choices from Settings.
+                val builder = player.trackSelectionParameters.buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !subtitlesOn)
+                if (audioLang.isNotBlank()) builder.setPreferredAudioLanguage(audioLang)
+                player.trackSelectionParameters = builder.build()
+            }
     }
 
     // Remembers how far through a movie or episode we are, so it can be resumed later.
@@ -176,7 +189,7 @@ fun PlayerScreen(
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                if (attempts[0] < MAX_RETRIES) {
+                if (autoReconnect && attempts[0] < MAX_RETRIES) {
                     attempts[0]++
                     val myToken = token[0]
                     val n = attempts[0]
@@ -342,8 +355,47 @@ fun PlayerScreen(
         }
     }
 
+    // Typing a channel number: 5 then 1 goes to channel 51. It jumps by itself after a moment, or at once on OK.
+    fun commitDigits() {
+        val n = digits.toIntOrNull()
+        digits = ""
+        if (n != null && n in 1..items.size && n - 1 != index && items[index].kind == PlayKind.LIVE) {
+            previousIndex = index
+            index = n - 1
+        }
+    }
+
+    LaunchedEffect(digitTick) {
+        if (digits.isNotEmpty()) {
+            delay(1800)
+            commitDigits()
+        }
+    }
+
     val handleKey: (KeyEvent) -> Boolean = handle@{ ev ->
         if (ev.type != KeyEventType.KeyDown) return@handle false
+        val typed = when (ev.key) {
+            Key.Zero, Key.NumPad0 -> '0'
+            Key.One, Key.NumPad1 -> '1'
+            Key.Two, Key.NumPad2 -> '2'
+            Key.Three, Key.NumPad3 -> '3'
+            Key.Four, Key.NumPad4 -> '4'
+            Key.Five, Key.NumPad5 -> '5'
+            Key.Six, Key.NumPad6 -> '6'
+            Key.Seven, Key.NumPad7 -> '7'
+            Key.Eight, Key.NumPad8 -> '8'
+            Key.Nine, Key.NumPad9 -> '9'
+            else -> null
+        }
+        if (typed != null && isLive && items.size > 1) {
+            if (digits.length < 4) digits += typed
+            digitTick++
+            return@handle true
+        }
+        if (digits.isNotEmpty() && (ev.key == Key.DirectionCenter || ev.key == Key.Enter || ev.key == Key.NumPadEnter)) {
+            commitDigits()
+            return@handle true
+        }
         bump()
         when (ev.key) {
             Key.MediaPlayPause -> { togglePlay(); return@handle true }
@@ -401,6 +453,21 @@ fun PlayerScreen(
                     })
                 }
         )
+
+        // The channel number being typed, top right.
+        if (digits.isNotEmpty()) {
+            Text(
+                digits,
+                fontSize = 48.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(32.dp)
+                    .background(Color(0xAA000000), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
+            )
+        }
 
         // Buffering / reconnecting / error message in the middle.
         if (buffering || statusMessage != null) {

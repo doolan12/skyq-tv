@@ -1,5 +1,6 @@
 package com.skyqlike.iptv.ui.home
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -64,8 +65,10 @@ fun buildRails(
     continueWatching: List<HistoryEntry>,
     onPlay: (Channel) -> Unit,
     onPlayHistory: (HistoryEntry) -> Unit,
+    onToggleFavourite: (Channel) -> Unit = {},
 ): List<Rail> {
-    fun channelTile(ch: Channel) = HomeTile(ch.id, ch.name, ch.group, ch.logoUrl, fit = true) { onPlay(ch) }
+    fun channelTile(ch: Channel) =
+        HomeTile(ch.id, ch.name, ch.group, ch.logoUrl, fit = true, onLongClick = { onToggleFavourite(ch) }) { onPlay(ch) }
     val byKey = channels.associateBy { it.favKey }
 
     return listOf(
@@ -92,6 +95,7 @@ fun HomeScreen(
     recentKeys: List<String> = emptyList(),
     continueWatching: List<HistoryEntry> = emptyList(),
     onPlayHistory: (HistoryEntry) -> Unit = {},
+    onToggleFavourite: (Channel) -> Unit = {},
     settingsContent: @Composable () -> Unit = {},
     guideContent: @Composable () -> Unit = {},
     moviesContent: @Composable () -> Unit = {},
@@ -103,6 +107,12 @@ fun HomeScreen(
 
     LaunchedEffect(Unit) { runCatching { firstFocus.requestFocus() } }
 
+    // Back from any other screen goes home. Back on Home leaves the app, like a normal TV app.
+    BackHandler(enabled = section != "Home") {
+        section = "Home"
+        runCatching { firstFocus.requestFocus() }
+    }
+
     Row(
         Modifier
             .fillMaxSize()
@@ -113,8 +123,8 @@ fun HomeScreen(
         Box(Modifier.weight(1f).fillMaxSize()) {
             when (section) {
                 "Home" -> {
-                    val rails = remember(channels, favouriteKeys, recentKeys, continueWatching) {
-                        buildRails(channels, favouriteKeys, recentKeys, continueWatching, onPlay, onPlayHistory)
+                    val rails = remember(channels, favouriteKeys, recentKeys, continueWatching, onToggleFavourite) {
+                        buildRails(channels, favouriteKeys, recentKeys, continueWatching, onPlay, onPlayHistory, onToggleFavourite)
                     }
                     HomeContent(rails, channels.firstOrNull(), onPlay)
                 }
@@ -123,17 +133,18 @@ fun HomeScreen(
                 "Movies" -> moviesContent()
                 "My Library" -> libraryContent()
                 "Catch Up" -> catchUpContent()
-                "Live TV" -> ChannelBrowser("Live TV", channels, "No channels loaded yet. Add a provider in Settings.", onPlay)
+                "Live TV" -> ChannelBrowser("Live TV", channels, "No channels loaded yet. Add a provider in Settings.", onPlay, onToggleFavourite)
                 "Favourites" -> ChannelBrowser(
                     "Favourites",
                     channels.filter { it.favKey in favouriteKeys },
-                    "No favourites yet. While watching a channel, choose Add fav and it will appear here.",
+                    "No favourites yet. While watching a channel, choose Add fav, or hold OK on a channel tile.",
                     onPlay,
+                    onToggleFavourite,
                 )
-                "Sports" -> categoryPage("Sports", channels, listOf("sport"), onPlay)
-                "Entertainment" -> categoryPage("Entertainment", channels, listOf("entertainment", "general"), onPlay)
-                "Documentaries" -> categoryPage("Documentaries", channels, listOf("documentar", "factual", "nature", "science", "history"), onPlay)
-                "Kids" -> categoryPage("Kids", channels, listOf("kid", "child", "cartoon", "family"), onPlay)
+                "Sports" -> categoryPage("Sports", channels, listOf("sport"), onPlay, onToggleFavourite)
+                "Entertainment" -> categoryPage("Entertainment", channels, listOf("entertainment", "general"), onPlay, onToggleFavourite)
+                "Documentaries" -> categoryPage("Documentaries", channels, listOf("documentar", "factual", "nature", "science", "history"), onPlay, onToggleFavourite)
+                "Kids" -> categoryPage("Kids", channels, listOf("kid", "child", "cartoon", "family"), onPlay, onToggleFavourite)
                 else -> ComingLater(section)
             }
         }
@@ -142,13 +153,20 @@ fun HomeScreen(
 
 /** Picks out the channels whose category name contains any of the given words. */
 @Composable
-private fun categoryPage(title: String, channels: List<Channel>, words: List<String>, onPlay: (Channel) -> Unit) {
+private fun categoryPage(
+    title: String,
+    channels: List<Channel>,
+    words: List<String>,
+    onPlay: (Channel) -> Unit,
+    onToggleFavourite: (Channel) -> Unit,
+) {
     val matches = channels.filter { ch -> words.any { ch.group.contains(it, ignoreCase = true) } }
     ChannelBrowser(
         title,
         matches,
         "No $title channels found. Channels are matched by their category name, so this fills in when your playlist has one.",
         onPlay,
+        onToggleFavourite,
     )
 }
 
@@ -283,6 +301,7 @@ private fun ComingLater(name: String) {
 internal fun FocusTile(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
     corner: Dp = 12.dp,
     focusedScale: Float = 1.08f,
     backgroundColor: Color = Palette.Panel,
@@ -293,9 +312,13 @@ internal fun FocusTile(
     val shape = RoundedCornerShape(corner)
     Surface(
         onClick = onClick,
-        // The TV Surface only reacts to remote buttons. This lets a finger tap work too (phones, touch screens).
-        modifier = modifier.onFocusChanged { if (it.hasFocus) onFocus() }.pointerInput(onClick) {
-            detectTapGestures(onTap = { onClick() })
+        onLongClick = onLongClick,
+        // The TV Surface only reacts to remote buttons. This lets a finger tap (or long press) work too.
+        modifier = modifier.onFocusChanged { if (it.hasFocus) onFocus() }.pointerInput(onClick, onLongClick) {
+            detectTapGestures(
+                onTap = { onClick() },
+                onLongPress = onLongClick?.let { lc -> { _ -> lc() } },
+            )
         },
         shape = ClickableSurfaceDefaults.shape(shape),
         colors = ClickableSurfaceDefaults.colors(

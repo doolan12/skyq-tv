@@ -32,10 +32,11 @@ fun ChannelBrowser(
     channels: List<Channel>,
     emptyMessage: String,
     onPlay: (Channel) -> Unit,
+    onToggleFavourite: (Channel) -> Unit = {},
 ) {
     val rails = remember(channels) {
         channels.groupBy { it.group.ifBlank { "Other" } }.map { (group, list) ->
-            Rail(group, list.map { ch -> HomeTile(ch.id, ch.name, ch.group, ch.logoUrl, fit = true) { onPlay(ch) } })
+            Rail(group, list.map { ch -> HomeTile(ch.id, ch.name, ch.group, ch.logoUrl, fit = true, onLongClick = { onToggleFavourite(ch) }) { onPlay(ch) } })
         }
     }
 

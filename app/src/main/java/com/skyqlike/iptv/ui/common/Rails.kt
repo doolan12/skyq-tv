@@ -29,6 +29,8 @@ data class HomeTile(
     val subtitle: String,
     val imageUrl: String?,
     val fit: Boolean = false,
+    /** Hold OK on the remote (or press and hold on a touch screen). Used for adding favourites. */
+    val onLongClick: (() -> Unit)? = null,
     val onClick: () -> Unit,
 )
 
@@ -65,6 +67,7 @@ fun PosterTile(tile: HomeTile, tileWidth: Dp, tileHeight: Dp) {
     Column(Modifier.width(tileWidth)) {
         FocusTile(
             onClick = tile.onClick,
+            onLongClick = tile.onLongClick,
             modifier = Modifier.fillMaxWidth().height(tileHeight),
             corner = 12.dp,
         ) {

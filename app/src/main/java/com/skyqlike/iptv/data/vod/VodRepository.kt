@@ -102,7 +102,7 @@ class VodRepository {
                 id = id,
                 season = season,
                 number = o.optString("episode_num").toIntOrNull() ?: (i + 1),
-                title = o.optString("title").ifBlank { "Episode ${i + 1}" },
+                title = tidyEpisodeTitle(o.optString("title")).ifBlank { "Episode ${i + 1}" },
                 description = info?.optString("plot").orEmpty(),
                 durationMin = seconds / 60,
                 streamUrl = x.seriesUrl(id, o.optString("container_extension").ifBlank { "mp4" }),
@@ -169,4 +169,10 @@ class VodRepository {
         }
         return map
     }
+}
+
+/** Providers often send "Show Name - S01E01 - Real Title". This keeps just "Real Title". */
+private fun tidyEpisodeTitle(raw: String): String {
+    val cleaned = raw.replace(Regex("""^.*?S\d{1,2}E\d{1,3}\s*[-\u2013:]?\s*"""), "").trim()
+    return cleaned.ifBlank { raw.trim() }
 }

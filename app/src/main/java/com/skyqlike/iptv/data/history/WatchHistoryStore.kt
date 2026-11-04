@@ -113,6 +113,11 @@ class WatchHistoryStore(context: Context) {
         prefs.edit().putString("recent", arr.toString()).apply()
     }
 
+    /** Forgets everything watched (Continue Watching, Recently Watched). */
+    fun clear() {
+        prefs.edit().clear().apply()
+    }
+
     private companion object {
         const val MAX_ENTRIES = 30
         const val MAX_RECENT_CHANNELS = 10

@@ -3,7 +3,17 @@ package com.skyqlike.iptv
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.tv.material3.Text
+import kotlinx.coroutines.delay
+import com.skyqlike.iptv.data.model.favKey
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -27,6 +37,9 @@ import com.skyqlike.iptv.data.model.PlayKind
 import com.skyqlike.iptv.data.model.Programme
 import com.skyqlike.iptv.data.model.toPlayItem
 import com.skyqlike.iptv.data.provider.ProviderStore
+import com.skyqlike.iptv.data.settings.ChannelRules
+import com.skyqlike.iptv.data.settings.SettingsStore
+import com.skyqlike.iptv.ui.settings.SettingsScreen
 import com.skyqlike.iptv.data.vod.VodRepository
 import com.skyqlike.iptv.data.vod.VodState
 import com.skyqlike.iptv.ui.catchup.CatchUpScreen
@@ -54,6 +67,7 @@ class MainActivity : ComponentActivity() {
                 val vodRepo = remember { VodRepository() }
                 val catchUpRepo = remember { CatchUpRepository() }
                 val favStore = remember { FavouritesStore(this@MainActivity) }
+                val settingsStore = remember { SettingsStore(this@MainActivity) }
                 val historyStore = remember { WatchHistoryStore(this@MainActivity) }
                 val sample = remember {
                     assets.open("sample.m3u").bufferedReader().use { M3uParser.parse(it.readText()) }
@@ -75,6 +89,23 @@ class MainActivity : ComponentActivity() {
                 var reloadTick by remember { mutableIntStateOf(0) }
                 var forceNext by remember { mutableStateOf(false) }
                 var playRequest by remember { mutableStateOf<PlayRequest?>(null) }
+                var note by remember { mutableStateOf<String?>(null) }
+                var settings by remember { mutableStateOf(settingsStore.load()) }
+                var adultUnlocked by remember { mutableStateOf(false) } // forgotten each time the app starts
+                var guideTick by remember { mutableIntStateOf(0) }
+
+                // The channels the user actually sees: hidden ones removed, categories in their order.
+                val shownChannels = remember(channels, settings, adultUnlocked) {
+                    ChannelRules.apply(channels, settings, adultUnlocked)
+                }
+
+                // A short message at the bottom of the screen that clears itself.
+                LaunchedEffect(note) {
+                    if (note != null) {
+                        delay(2500)
+                        note = null
+                    }
+                }
 
                 // Loads channels, then the TV guide, whenever the provider changes or a refresh is asked for.
                 LaunchedEffect(activeId, reloadTick) {
@@ -124,12 +155,32 @@ class MainActivity : ComponentActivity() {
                     busy = false
                 }
 
+                // "Refresh TV guide" in Settings: reload only the guide.
+                LaunchedEffect(guideTick) {
+                    if (guideTick > 0) {
+                        val provider = providers.firstOrNull { it.id == activeId }
+                        busy = true
+                        epgStatus = "Loading TV guide..."
+                        epgRepo.load(provider, channels, true)
+                            .onSuccess {
+                                epg = it
+                                epgStatus = if (provider == null) "TV guide: sample listings." else "TV guide: listings for ${it.size} channels."
+                            }
+                            .onFailure {
+                                epg = emptyMap()
+                                epgStatus = it.message ?: "The TV guide couldn't be loaded."
+                            }
+                        catchUp = CatchUpState.Idle
+                        busy = false
+                    }
+                }
+
                 val activeProvider = providers.firstOrNull { it.id == activeId }
 
                 // Starts the player on a live channel (the whole channel list is there for channel up/down).
                 val playChannel: (Channel) -> Unit = { ch ->
-                    val i = channels.indexOfFirst { it.id == ch.id }
-                    if (i >= 0) playRequest = PlayRequest(channels.map { it.toPlayItem() }, i)
+                    val i = shownChannels.indexOfFirst { it.id == ch.id }
+                    if (i >= 0) playRequest = PlayRequest(shownChannels.map { it.toPlayItem() }, i)
                 }
 
                 val playHistory: (HistoryEntry) -> Unit = { e ->
@@ -141,15 +192,22 @@ class MainActivity : ComponentActivity() {
 
                 Box(Modifier.fillMaxSize()) {
                     HomeScreen(
-                        channels = channels,
+                        channels = shownChannels,
                         onPlay = playChannel,
                         favouriteKeys = favourites,
                         recentKeys = recentKeys,
                         continueWatching = history.filter { !it.finished && it.positionMs > 10_000 },
                         onPlayHistory = playHistory,
+                        onToggleFavourite = { ch ->
+                            val key = ch.favKey
+                            val adding = key !in favourites
+                            favourites = if (adding) favourites + key else favourites - key
+                            favStore.save(favourites)
+                            note = if (adding) "Added ${ch.name} to Favourites" else "Removed ${ch.name} from Favourites"
+                        },
                         guideContent = {
                             GuideScreen(
-                                channels = channels,
+                                channels = shownChannels,
                                 epg = epg,
                                 status = epgStatus,
                                 onPlay = playChannel,
@@ -205,7 +263,7 @@ class MainActivity : ComponentActivity() {
                         },
                         catchUpContent = {
                             CatchUpScreen(
-                                channels = channels,
+                                channels = shownChannels,
                                 state = catchUp,
                                 message = catchUpMessage,
                                 onNeedData = {
@@ -248,6 +306,39 @@ class MainActivity : ComponentActivity() {
                             LibraryScreen(history = history, onPlay = playHistory)
                         },
                         settingsContent = {
+                            SettingsScreen(
+                                settings = settings,
+                                onChange = {
+                                    settings = it
+                                    settingsStore.save(it)
+                                },
+                                allChannels = channels,
+                                visibleCount = shownChannels.size,
+                                adultUnlocked = adultUnlocked,
+                                onAdultUnlockedChange = { adultUnlocked = it },
+                                providerName = activeProvider?.name ?: "Sample playlist",
+                                status = if (epgStatus.isBlank()) status else "$status\n$epgStatus",
+                                busy = busy,
+                                onRefreshPlaylist = {
+                                    forceNext = true
+                                    reloadTick++
+                                },
+                                onRefreshGuide = { guideTick++ },
+                                onClearCache = {
+                                    this@MainActivity.cacheDir.listFiles()
+                                        ?.filter { it.name.startsWith("playlist2_") || it.name.startsWith("epg_") }
+                                        ?.forEach { it.delete() }
+                                    forceNext = true
+                                    reloadTick++
+                                    note = "Saved data cleared. Loading fresh copies..."
+                                },
+                                onClearHistory = {
+                                    historyStore.clear()
+                                    history = historyStore.entries()
+                                    recentKeys = historyStore.recentChannels()
+                                    note = "Watch history cleared"
+                                },
+                                providersContent = {
                             ProvidersScreen(
                                 providers = providers,
                                 activeId = activeId,
@@ -284,8 +375,23 @@ class MainActivity : ComponentActivity() {
                                     reloadTick++
                                 },
                             )
+                                },
+                            )
                         },
                     )
+
+                    note?.let { text ->
+                        Text(
+                            text,
+                            fontSize = 18.sp,
+                            color = Color.White,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 28.dp)
+                                .background(Color(0xE6101014), RoundedCornerShape(24.dp))
+                                .padding(horizontal = 22.dp, vertical = 12.dp),
+                        )
+                    }
 
                     // The player sits on top of everything. Back returns to the screen you came from.
                     playRequest?.let { request ->
@@ -294,7 +400,7 @@ class MainActivity : ComponentActivity() {
                             startIndex = request.start,
                             epg = epg,
                             favouriteKeys = favourites,
-                            startPositionFor = { historyStore.positionFor(it.key) },
+                            startPositionFor = { if (settings.resume) historyStore.positionFor(it.key) else 0L },
                             onToggleFavourite = { item ->
                                 val key = item.favKey
                                 if (key != null) {
@@ -313,6 +419,10 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             onClose = { playRequest = null },
+                            aspectDefault = settings.aspect,
+                            autoReconnect = settings.autoReconnect,
+                            subtitlesOn = settings.subtitlesOn,
+                            audioLang = settings.audioLang,
                         )
                     }
                 }
