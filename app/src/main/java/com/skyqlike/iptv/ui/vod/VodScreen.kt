@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -125,7 +126,7 @@ private fun RailList(rails: List<Rail>) {
             verticalArrangement = Arrangement.spacedBy(18.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 40.dp),
         ) {
-            items(rails, key = { it.title }) { RailRow(it, 150.dp, 225.dp) }
+            itemsIndexed(rails, key = { i, r -> "$i|${r.title}" }) { _, rail -> RailRow(rail, 150.dp, 225.dp) }
         }
     }
 }

@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -55,7 +55,7 @@ fun RailRow(
             contentPadding = PaddingValues(horizontal = 36.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            items(rail.tiles, key = { rail.title + "|" + it.id }) { tile ->
+            itemsIndexed(rail.tiles, key = { i, t -> "$i|${rail.title}|${t.id}" }) { _, tile ->
                 PosterTile(tile, tileWidth, tileHeight)
             }
         }

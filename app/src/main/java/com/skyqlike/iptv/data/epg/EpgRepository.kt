@@ -92,7 +92,10 @@ class EpgRepository(private val context: Context) {
         channels: List<Channel>,
     ): Result<Map<String, List<Programme>>> = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
-        val replayable = channels.filter { it.catchupDays > 0 && it.epgId != null }
+        // The sample playlist has no real archive; real providers need an Xtream channel ID to build replay links.
+        val replayable = channels.filter {
+            it.catchupDays > 0 && it.epgId != null && (provider == null || it.xtreamId != null)
+        }
         if (replayable.isEmpty()) {
             return@withContext Result.failure(
                 IOException("None of your channels offer catch-up. It needs an Xtream login with archive channels.")

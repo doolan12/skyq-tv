@@ -148,7 +148,7 @@ private fun Browser(
                 contentPadding = PaddingValues(end = 36.dp, bottom = 40.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(list, key = { it.channelEpgId + it.start }) { show ->
+                items(list) { show ->
                     FocusTile(
                         onClick = { onPlay(channel, show) },
                         modifier = Modifier.fillMaxWidth().height(72.dp),
