@@ -44,6 +44,7 @@ import androidx.tv.material3.Text
 import com.skyqlike.iptv.data.history.HistoryEntry
 import com.skyqlike.iptv.data.model.Channel
 import com.skyqlike.iptv.data.model.favKey
+import com.skyqlike.iptv.ui.channels.ChannelBrowser
 import com.skyqlike.iptv.ui.common.HomeTile
 import com.skyqlike.iptv.ui.common.Rail
 import com.skyqlike.iptv.ui.common.RailRow
@@ -120,10 +121,33 @@ fun HomeScreen(
                 "TV Guide" -> guideContent()
                 "Movies" -> moviesContent()
                 "My Library" -> libraryContent()
+                "Live TV" -> ChannelBrowser("Live TV", channels, "No channels loaded yet. Add a provider in Settings.", onPlay)
+                "Favourites" -> ChannelBrowser(
+                    "Favourites",
+                    channels.filter { it.favKey in favouriteKeys },
+                    "No favourites yet. While watching a channel, choose Add fav and it will appear here.",
+                    onPlay,
+                )
+                "Sports" -> categoryPage("Sports", channels, listOf("sport"), onPlay)
+                "Entertainment" -> categoryPage("Entertainment", channels, listOf("entertainment", "general"), onPlay)
+                "Documentaries" -> categoryPage("Documentaries", channels, listOf("documentar", "factual", "nature", "science", "history"), onPlay)
+                "Kids" -> categoryPage("Kids", channels, listOf("kid", "child", "cartoon", "family"), onPlay)
                 else -> ComingLater(section)
             }
         }
     }
+}
+
+/** Picks out the channels whose category name contains any of the given words. */
+@Composable
+private fun categoryPage(title: String, channels: List<Channel>, words: List<String>, onPlay: (Channel) -> Unit) {
+    val matches = channels.filter { ch -> words.any { ch.group.contains(it, ignoreCase = true) } }
+    ChannelBrowser(
+        title,
+        matches,
+        "No $title channels found. Channels are matched by their category name, so this fills in when your playlist has one.",
+        onPlay,
+    )
 }
 
 @Composable

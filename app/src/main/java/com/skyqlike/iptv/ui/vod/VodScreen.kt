@@ -279,10 +279,10 @@ private fun SeriesDetails(
             Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                 Artwork(
                     series.coverUrl, series.name,
-                    Modifier.width(140.dp).height(210.dp).clip(RoundedCornerShape(12.dp)),
+                    Modifier.width(110.dp).height(165.dp).clip(RoundedCornerShape(12.dp)),
                 )
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(series.name, fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+                    Text(series.name, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
                     val meta = listOf(series.year, series.genre.ifBlank { series.category })
                         .filter { it.isNotBlank() }.joinToString("  |  ")
                     if (meta.isNotBlank()) Text(meta, fontSize = 15.sp, color = Palette.Accent)
@@ -290,10 +290,22 @@ private fun SeriesDetails(
                         series.plot.ifBlank { "Your provider didn't send a description for this series." },
                         fontSize = 15.sp,
                         color = Palette.TextSecondary,
-                        maxLines = 4,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    ActionButton("Back", Modifier.width(120.dp)) { onBack() }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        val first = all.orEmpty().sortedWith(compareBy({ it.season }, { it.number }))
+                        ActionButton(
+                            if (all == null) "Loading..." else "Play",
+                            Modifier.width(140.dp),
+                            accent = true,
+                        ) {
+                            // Plays from the first episode of the season you're looking at.
+                            val start = first.indexOfFirst { it.season == currentSeason }.coerceAtLeast(0)
+                            if (first.isNotEmpty()) onPlay(series, first, start)
+                        }
+                        ActionButton("Back", Modifier.width(120.dp)) { onBack() }
+                    }
                 }
             }
         }
