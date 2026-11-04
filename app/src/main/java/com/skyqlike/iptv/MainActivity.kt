@@ -76,6 +76,7 @@ class MainActivity : ComponentActivity() {
                 val stremioRepo = remember { StremioRepository() }
                 val stremioStore = remember { StremioStore(this@MainActivity) }
                 val historyStore = remember { WatchHistoryStore(this@MainActivity) }
+                val stremioFavStore = remember { com.skyqlike.iptv.data.stremio.StremioFavouritesStore(this@MainActivity) }
                 val sample = remember {
                     assets.open("sample.m3u").bufferedReader().use { M3uParser.parse(it.readText()) }
                 }
@@ -102,6 +103,7 @@ class MainActivity : ComponentActivity() {
                 var guideTick by remember { mutableIntStateOf(0) }
                 var stremio by remember { mutableStateOf(stremioStore.load()) }
                 var stremioState by remember { mutableStateOf<StremioState>(StremioState.Idle) }
+                var stremioFavs by remember { mutableStateOf(stremioFavStore.all()) }
 
                 // Stremio titles are kept apart from the IPTV lists, and the other way round.
                 val iptvHistory = remember(history) { history.filterNot { it.key.startsWith("stremio:") } }
@@ -322,6 +324,7 @@ class MainActivity : ComponentActivity() {
                                 session = stremio,
                                 state = stremioState,
                                 continueEntries = stremioHistory,
+                                favourites = stremioFavs,
                                 actions = StremioActions(
                                     onNeedData = {
                                         if (stremioState is StremioState.Idle || stremioState is StremioState.Error) {
@@ -368,6 +371,16 @@ class MainActivity : ComponentActivity() {
                                         stremio = stremio.copy(manualAddons = stremio.manualAddons - url)
                                         stremioStore.save(stremio)
                                         stremioState = StremioState.Idle
+                                    },
+                                    onToggleFavourite = { title ->
+                                        val had = stremioFavs.any { it.type == title.type && it.id == title.id }
+                                        stremioFavs = if (had) {
+                                            stremioFavs.filterNot { it.type == title.type && it.id == title.id }
+                                        } else {
+                                            listOf(title) + stremioFavs
+                                        }
+                                        stremioFavStore.save(stremioFavs)
+                                        note = if (had) "Removed ${title.name} from Favourites" else "Added ${title.name} to Favourites"
                                     },
                                     search = { query ->
                                         val addons = (stremioState as? StremioState.Ready)?.home?.addons ?: emptyList()

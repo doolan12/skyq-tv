@@ -1,6 +1,7 @@
 package com.skyqlike.iptv.ui.stremio
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,9 +33,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
@@ -66,6 +70,7 @@ class StremioActions(
     val onAddAddon: suspend (link: String) -> String?,
     val onRemoveAddon: (link: String) -> Unit,
     val search: suspend (query: String) -> List<StremioItem>,
+    val onToggleFavourite: (StremioItem) -> Unit,
     val byGenre: suspend (type: String, genre: String) -> List<StremioRow>,
     val loadDetails: suspend (StremioItem) -> StremioItem,
     val loadStreams: suspend (type: String, videoId: String) -> StremioStreams,
@@ -78,6 +83,7 @@ fun StremioScreen(
     session: StremioSession,
     state: StremioState,
     continueEntries: List<HistoryEntry>,
+    favourites: List<StremioItem>,
     actions: StremioActions,
 ) {
     var showManage by remember { mutableStateOf(false) }
@@ -96,10 +102,15 @@ fun StremioScreen(
             canClose = session.hasAnything,
             onClose = { showManage = false },
         )
-        item != null -> Details(item, actions) { openItem = null }
+        item != null -> Details(
+            item,
+            actions,
+            isFavourite = favourites.any { it.type == item.type && it.id == item.id },
+        ) { openItem = null }
         else -> Browse(
             state = state,
             continueEntries = continueEntries,
+            favourites = favourites,
             actions = actions,
             onOpen = { openItem = it },
             onManage = { showManage = true },
@@ -109,10 +120,14 @@ fun StremioScreen(
 
 // ---------------------------------------------------------------------------- browse
 
+/** A row on the browse page, with the size its tiles are drawn at. */
+private class RailSpec(val rail: Rail, val width: Dp, val height: Dp)
+
 @Composable
 private fun Browse(
     state: StremioState,
     continueEntries: List<HistoryEntry>,
+    favourites: List<StremioItem>,
     actions: StremioActions,
     onOpen: (StremioItem) -> Unit,
     onManage: () -> Unit,
@@ -122,6 +137,7 @@ private fun Browse(
     var results by remember { mutableStateOf<List<StremioItem>?>(null) }
     var genre by remember { mutableStateOf<String?>(null) }
     var genreRows by remember { mutableStateOf<List<StremioRow>?>(null) }
+    var heroIndex by remember { mutableIntStateOf(0) }
     val type = if (tab == 0) "movie" else "series"
     val searching = query.trim().length >= 2
 
@@ -144,7 +160,21 @@ private fun Browse(
         if (g != null) genreRows = runCatching { actions.byGenre(type, g) }.getOrDefault(emptyList())
     }
     // A different tab has different genres, so start again from "All".
-    LaunchedEffect(tab) { genre = null }
+    LaunchedEffect(tab) { genre = null; heroIndex = 0 }
+
+    // The big banner at the top shows a few popular titles, one after the other.
+    val heroItems: List<StremioItem> = (state as? StremioState.Ready)?.home?.rows.orEmpty()
+        .filter { it.type == type }
+        .flatMap { it.items }
+        .filter { !it.background.isNullOrBlank() || !it.poster.isNullOrBlank() }
+        .distinctBy { it.id }
+        .take(5)
+    LaunchedEffect(heroItems.size, tab) {
+        while (heroItems.size > 1) {
+            delay(8000)
+            heroIndex = (heroIndex + 1) % heroItems.size
+        }
+    }
 
     Column(Modifier.fillMaxSize().padding(top = 20.dp)) {
         Row(
@@ -168,39 +198,59 @@ private fun Browse(
                 ActionButton("Try again", Modifier.width(150.dp), accent = true) { actions.onNeedData() }
             }
             is StremioState.Ready -> {
-                val rails = ArrayList<Rail>()
+                val toggle: (StremioItem) -> Unit = { actions.onToggleFavourite(it) }
+                val rails = ArrayList<RailSpec>()
                 val hits = results?.filter { it.type == type }
+                val showBanner = !searching && genre == null && heroItems.isNotEmpty()
+
                 if (searching) {
                     if (hits != null) {
-                        rails += Rail("Results for \"${query.trim()}\"", hits.map { tileFor(it, onOpen) })
+                        rails += RailSpec(Rail("Results for \"${query.trim()}\"", hits.map { tileFor(it, onOpen, toggle) }), 150.dp, 225.dp)
                     }
                 } else if (genre != null) {
                     val g = genre!!
                     val fromAddons = genreRows
                     if (fromAddons != null) {
-                        rails += fromAddons.map { row -> Rail(row.title, row.items.map { tileFor(it, onOpen) }) }
+                        fromAddons.forEach { row -> rails += RailSpec(Rail(row.title, row.items.map { tileFor(it, onOpen, toggle) }), 150.dp, 225.dp) }
                         if (rails.isEmpty()) {
                             // The addons couldn't filter by genre, so filter what's already on screen.
                             val seen = HashSet<String>()
                             val local = state.home.rows.filter { it.type == type }.flatMap { it.items }
                                 .filter { it.genres.any { x -> x.equals(g, true) } && seen.add(it.id) }
-                            if (local.isNotEmpty()) rails += Rail(g, local.map { tileFor(it, onOpen) })
+                            if (local.isNotEmpty()) rails += RailSpec(Rail(g, local.map { tileFor(it, onOpen, toggle) }), 150.dp, 225.dp)
                         }
                     }
                 } else {
-                    // Things you were part-way through, for this tab.
+                    // Things you were part-way through (each series once, at the episode you got to).
                     val cont = continueEntries.mapNotNull { e -> entryToItem(e)?.let { e to it } }
                         .filter { it.second.type == type }
+                        .distinctBy { it.second.id }
                     if (cont.isNotEmpty()) {
-                        rails += Rail(
-                            "Continue Watching",
-                            cont.map { (e, found) -> HomeTile("cw:" + e.key, found.name, e.subtitle, found.poster) { onOpen(found) } },
+                        rails += RailSpec(
+                            Rail(
+                                "Continue Watching",
+                                cont.map { (e, found) ->
+                                    HomeTile(
+                                        id = "cw:" + e.key,
+                                        title = found.name,
+                                        subtitle = e.subtitle,
+                                        imageUrl = found.poster,
+                                        progress = if (e.durationMs > 0) e.positionMs.toFloat() / e.durationMs else null,
+                                    ) { onOpen(found) }
+                                },
+                            ),
+                            220.dp, 124.dp,
                         )
                     }
-                    rails += state.home.rows.filter { it.type == type }.map { row: StremioRow ->
-                        Rail(row.title, row.items.map { tileFor(it, onOpen) })
+                    val favs = favourites.filter { it.type == type }
+                    if (favs.isNotEmpty()) {
+                        rails += RailSpec(Rail("My Favourites", favs.map { tileFor(it, onOpen, toggle) }), 130.dp, 195.dp)
+                    }
+                    state.home.rows.filter { it.type == type }.forEach { row: StremioRow ->
+                        rails += RailSpec(Rail(row.title, row.items.map { tileFor(it, onOpen, toggle) }), 150.dp, 225.dp)
                     }
                 }
+
                 val genreList: List<String> = run {
                     val fromLists = state.home.addons.flatMap { a ->
                         a.catalogs.filter { it.type == type && it.genreOnly }.flatMap { it.genreOptions }
@@ -219,9 +269,15 @@ private fun Browse(
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                     contentPadding = PaddingValues(bottom = 40.dp),
                 ) {
-                    item {
-                        Box(Modifier.fillMaxWidth().padding(horizontal = 36.dp)) {
-                            LabeledField("Search Stremio", query) { query = it }
+                    if (showBanner) {
+                        item {
+                            val hero = heroItems[heroIndex.coerceIn(0, heroItems.size - 1)]
+                            Hero(
+                                item = hero,
+                                isFavourite = favourites.any { it.type == hero.type && it.id == hero.id },
+                                onOpen = { onOpen(hero) },
+                                onFavourite = { toggle(hero) },
+                            )
                         }
                     }
                     if (genreList.isNotEmpty() && !searching) {
@@ -235,6 +291,11 @@ private fun Browse(
                                     ActionButton(g, Modifier.width(150.dp), accent = genre.equals(g, true)) { genre = g }
                                 }
                             }
+                        }
+                    }
+                    item {
+                        Box(Modifier.fillMaxWidth().padding(horizontal = 36.dp)) {
+                            LabeledField("Search Stremio", query) { query = it }
                         }
                     }
                     item { Text(addonNote, fontSize = 13.sp, color = Palette.TextSecondary, modifier = Modifier.padding(horizontal = 36.dp)) }
@@ -256,8 +317,53 @@ private fun Browse(
                             )
                         }
                     }
-                    itemsIndexed(rails, key = { i, r -> "$i|${r.title}" }) { _, rail -> RailRow(rail, 150.dp, 225.dp) }
+                    itemsIndexed(rails, key = { i, r -> "$i|${r.rail.title}" }) { _, spec -> RailRow(spec.rail, spec.width, spec.height) }
                 }
+            }
+        }
+    }
+}
+
+/** The big featured banner at the top of the page. */
+@Composable
+private fun Hero(item: StremioItem, isFavourite: Boolean, onOpen: () -> Unit, onFavourite: () -> Unit) {
+    Box(
+        Modifier.padding(horizontal = 36.dp).fillMaxWidth().height(230.dp).clip(RoundedCornerShape(16.dp))
+    ) {
+        Artwork(item.background ?: item.poster, item.name, Modifier.fillMaxSize())
+        // Darkens the left side so the writing is easy to read over any picture.
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.horizontalGradient(listOf(Color.Black.copy(alpha = 0.9f), Color.Black.copy(alpha = 0.6f), Color.Transparent))
+            )
+        )
+        Column(
+            Modifier.fillMaxWidth(0.62f).padding(28.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                if (item.type == "series") "FEATURED SERIES" else "FEATURED MOVIE",
+                fontSize = 12.sp,
+                color = Palette.Accent,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                item.name,
+                fontSize = 30.sp,
+                fontWeight = FontWeight.Bold,
+                color = Palette.TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            val meta = listOf(item.year, item.genres.take(3).joinToString(", "), if (item.rating.isNotBlank()) "Rating ${item.rating}" else "")
+                .filter { it.isNotBlank() }.joinToString("  |  ")
+            if (meta.isNotBlank()) Text(meta, fontSize = 14.sp, color = Palette.TextSecondary)
+            if (item.description.isNotBlank()) {
+                Text(item.description, fontSize = 14.sp, color = Palette.TextSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 6.dp)) {
+                ActionButton("View", Modifier.width(110.dp), accent = true) { onOpen() }
+                ActionButton(if (isFavourite) "Remove Favourite" else "Add Favourite", Modifier.width(180.dp)) { onFavourite() }
             }
         }
     }
@@ -270,8 +376,14 @@ private fun Note(text: String) {
     }
 }
 
-private fun tileFor(item: StremioItem, onOpen: (StremioItem) -> Unit) =
-    HomeTile(item.type + ":" + item.id, item.name, item.year, item.poster) { onOpen(item) }
+private fun tileFor(item: StremioItem, onOpen: (StremioItem) -> Unit, onFavourite: ((StremioItem) -> Unit)? = null) =
+    HomeTile(
+        id = item.type + ":" + item.id,
+        title = item.name,
+        subtitle = item.year,
+        imageUrl = item.poster,
+        onLongClick = onFavourite?.let { f -> { f(item) } },
+    ) { onOpen(item) }
 
 /**
  * Turns a saved watch entry back into a title to open.
@@ -288,7 +400,7 @@ private fun entryToItem(e: HistoryEntry): StremioItem? {
 private data class Pick(val video: StremioVideo?)
 
 @Composable
-private fun Details(start: StremioItem, actions: StremioActions, onBack: () -> Unit) {
+private fun Details(start: StremioItem, actions: StremioActions, isFavourite: Boolean, onBack: () -> Unit) {
     BackHandler(onBack = onBack)
     var info by remember(start.id) { mutableStateOf(start) }
     var picking by remember(start.id) { mutableStateOf<Pick?>(null) }
@@ -338,6 +450,7 @@ private fun Details(start: StremioItem, actions: StremioActions, onBack: () -> U
                                 Modifier.width(190.dp).focusRequester(playFocus),
                                 accent = true,
                             ) { episodes.firstOrNull()?.let { picking = Pick(it) } }
+                            ActionButton(if (isFavourite) "Remove Favourite" else "Add Favourite", Modifier.width(180.dp)) { actions.onToggleFavourite(info) }
                             ActionButton("Back", Modifier.width(120.dp)) { onBack() }
                         }
                     }
@@ -396,6 +509,7 @@ private fun Details(start: StremioItem, actions: StremioActions, onBack: () -> U
                 Text(info.description.ifBlank { "No description." }, fontSize = 16.sp, color = Palette.TextSecondary)
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 8.dp)) {
                     ActionButton("Play", Modifier.width(140.dp).focusRequester(playFocus), accent = true) { picking = Pick(null) }
+                    ActionButton(if (isFavourite) "Remove Favourite" else "Add Favourite", Modifier.width(180.dp)) { actions.onToggleFavourite(info) }
                     ActionButton("Back", Modifier.width(120.dp)) { onBack() }
                 }
             }

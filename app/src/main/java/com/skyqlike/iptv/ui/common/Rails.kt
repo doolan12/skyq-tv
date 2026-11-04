@@ -1,6 +1,8 @@
 package com.skyqlike.iptv.ui.common
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,6 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -31,6 +34,8 @@ data class HomeTile(
     val fit: Boolean = false,
     /** Hold OK on the remote (or press and hold on a touch screen). Used for adding favourites. */
     val onLongClick: (() -> Unit)? = null,
+    /** 0 to 1: how far through it you are. Shows a thin bar along the bottom of the tile. */
+    val progress: Float? = null,
     val onClick: () -> Unit,
 )
 
@@ -71,12 +76,23 @@ fun PosterTile(tile: HomeTile, tileWidth: Dp, tileHeight: Dp) {
             modifier = Modifier.fillMaxWidth().height(tileHeight),
             corner = 12.dp,
         ) {
-            Artwork(
-                url = tile.imageUrl,
-                seed = tile.title,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = if (tile.fit) ContentScale.Fit else ContentScale.Crop,
-            )
+            Box(Modifier.fillMaxSize()) {
+                Artwork(
+                    url = tile.imageUrl,
+                    seed = tile.title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = if (tile.fit) ContentScale.Fit else ContentScale.Crop,
+                )
+                val done = tile.progress
+                if (done != null && done > 0f) {
+                    Box(
+                        Modifier.align(Alignment.BottomStart)
+                            .fillMaxWidth(done.coerceIn(0.03f, 1f))
+                            .height(5.dp)
+                            .background(Palette.Accent)
+                    )
+                }
+            }
         }
         Text(
             tile.title,
