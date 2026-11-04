@@ -43,6 +43,7 @@ import com.skyqlike.iptv.data.stremio.StremioState
 import com.skyqlike.iptv.data.stremio.StremioStore
 import com.skyqlike.iptv.data.settings.SettingsStore
 import com.skyqlike.iptv.ui.settings.SettingsScreen
+import com.skyqlike.iptv.ui.stremio.StremioAccountPage
 import com.skyqlike.iptv.ui.stremio.StremioActions
 import com.skyqlike.iptv.ui.stremio.StremioScreen
 import com.skyqlike.iptv.data.vod.VodRepository
@@ -64,6 +65,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
+            // Everything reads about 20 percent bigger, which suits a TV across the room.
+            val baseDensity = androidx.compose.ui.platform.LocalDensity.current
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.ui.platform.LocalDensity provides
+                    androidx.compose.ui.unit.Density(baseDensity.density, baseDensity.fontScale * 1.2f)
+            ) {
             SkyTheme {
                 val scope = rememberCoroutineScope()
                 val store = remember { ProviderStore(this@MainActivity) }
@@ -207,8 +214,99 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
+                val stremioActions = StremioActions(
+                                    onNeedData = {
+                                        if (stremioState is StremioState.Idle || stremioState is StremioState.Error) {
+                                            stremioState = StremioState.Loading
+                                            scope.launch {
+                                                stremioState = stremioRepo.loadHome(stremio).fold(
+                                                    onSuccess = { StremioState.Ready(it) },
+                                                    onFailure = { StremioState.Error(it.message ?: "Couldn't load Stremio.") },
+                                                )
+                                            }
+                                        }
+                                    },
+                                    onSignIn = { email, password ->
+                                        stremioRepo.login(email, password).fold(
+                                            onSuccess = { key ->
+                                                stremio = stremio.copy(email = email.trim(), authKey = key)
+                                                stremioStore.save(stremio)
+                                                stremioState = StremioState.Idle
+                                                null
+                                            },
+                                            onFailure = { it.message ?: "Couldn't sign in." },
+                                        )
+                                    },
+                                    onSignOut = {
+                                        stremio = stremio.copy(email = "", authKey = "")
+                                        stremioStore.save(stremio)
+                                        stremioState = StremioState.Idle
+                                    },
+                                    onAddAddon = { link ->
+                                        stremioRepo.addonFromLink(link).fold(
+                                            onSuccess = { found ->
+                                                val url = found.first
+                                                if (url !in stremio.manualAddons) {
+                                                    stremio = stremio.copy(manualAddons = stremio.manualAddons + url)
+                                                    stremioStore.save(stremio)
+                                                }
+                                                stremioState = StremioState.Idle
+                                                null
+                                            },
+                                            onFailure = { it.message ?: "Couldn't add that addon." },
+                                        )
+                                    },
+                                    onRemoveAddon = { url ->
+                                        stremio = stremio.copy(manualAddons = stremio.manualAddons - url)
+                                        stremioStore.save(stremio)
+                                        stremioState = StremioState.Idle
+                                    },
+                                    onToggleFavourite = { title ->
+                                        val had = stremioFavs.any { it.type == title.type && it.id == title.id }
+                                        stremioFavs = if (had) {
+                                            stremioFavs.filterNot { it.type == title.type && it.id == title.id }
+                                        } else {
+                                            listOf(title) + stremioFavs
+                                        }
+                                        stremioFavStore.save(stremioFavs)
+                                        note = if (had) "Removed ${title.name} from Favourites" else "Added ${title.name} to Favourites"
+                                    },
+                                    search = { query ->
+                                        val addons = (stremioState as? StremioState.Ready)?.home?.addons ?: emptyList()
+                                        stremioRepo.search(addons, query)
+                                    },
+                                    byGenre = { type, genre ->
+                                        val addons = (stremioState as? StremioState.Ready)?.home?.addons ?: emptyList()
+                                        stremioRepo.byGenre(addons, type, genre)
+                                    },
+                                    loadDetails = { title ->
+                                        val addons = (stremioState as? StremioState.Ready)?.home?.addons ?: emptyList()
+                                        stremioRepo.details(addons, title)
+                                    },
+                                    loadStreams = { type, videoId ->
+                                        val addons = (stremioState as? StremioState.Ready)?.home?.addons ?: emptyList()
+                                        stremioRepo.streams(addons, type, videoId)
+                                    },
+                                    onPlay = { title, video, stream ->
+                                        playRequest = PlayRequest(
+                                            listOf(
+                                                PlayItem(
+                                                    key = if (video != null) "stremio:series:${title.id}|${video.id}" else "stremio:${title.type}:${title.id}",
+                                                    title = title.name,
+                                                    subtitle = if (video != null) "S${video.season} E${video.episode}  ${video.title}" else title.year,
+                                                    url = stream.url,
+                                                    kind = if (video != null) PlayKind.EPISODE else PlayKind.MOVIE,
+                                                    imageUrl = title.poster,
+                                                )
+                                            ),
+                                            0,
+                                        )
+                                    },
+                                )
+
                 Box(Modifier.fillMaxSize()) {
                     HomeScreen(
+                        epg = epg,
                         channels = shownChannels,
                         onPlay = playChannel,
                         favouriteKeys = favourites,
@@ -228,6 +326,8 @@ class MainActivity : ComponentActivity() {
                                 epg = epg,
                                 status = epgStatus,
                                 onPlay = playChannel,
+                                // The little preview stops while the full player is open.
+                                previewEnabled = playRequest == null,
                             )
                         },
                         moviesContent = {
@@ -325,95 +425,7 @@ class MainActivity : ComponentActivity() {
                                 state = stremioState,
                                 continueEntries = stremioHistory,
                                 favourites = stremioFavs,
-                                actions = StremioActions(
-                                    onNeedData = {
-                                        if (stremioState is StremioState.Idle || stremioState is StremioState.Error) {
-                                            stremioState = StremioState.Loading
-                                            scope.launch {
-                                                stremioState = stremioRepo.loadHome(stremio).fold(
-                                                    onSuccess = { StremioState.Ready(it) },
-                                                    onFailure = { StremioState.Error(it.message ?: "Couldn't load Stremio.") },
-                                                )
-                                            }
-                                        }
-                                    },
-                                    onSignIn = { email, password ->
-                                        stremioRepo.login(email, password).fold(
-                                            onSuccess = { key ->
-                                                stremio = stremio.copy(email = email.trim(), authKey = key)
-                                                stremioStore.save(stremio)
-                                                stremioState = StremioState.Idle
-                                                null
-                                            },
-                                            onFailure = { it.message ?: "Couldn't sign in." },
-                                        )
-                                    },
-                                    onSignOut = {
-                                        stremio = stremio.copy(email = "", authKey = "")
-                                        stremioStore.save(stremio)
-                                        stremioState = StremioState.Idle
-                                    },
-                                    onAddAddon = { link ->
-                                        stremioRepo.addonFromLink(link).fold(
-                                            onSuccess = { found ->
-                                                val url = found.first
-                                                if (url !in stremio.manualAddons) {
-                                                    stremio = stremio.copy(manualAddons = stremio.manualAddons + url)
-                                                    stremioStore.save(stremio)
-                                                }
-                                                stremioState = StremioState.Idle
-                                                null
-                                            },
-                                            onFailure = { it.message ?: "Couldn't add that addon." },
-                                        )
-                                    },
-                                    onRemoveAddon = { url ->
-                                        stremio = stremio.copy(manualAddons = stremio.manualAddons - url)
-                                        stremioStore.save(stremio)
-                                        stremioState = StremioState.Idle
-                                    },
-                                    onToggleFavourite = { title ->
-                                        val had = stremioFavs.any { it.type == title.type && it.id == title.id }
-                                        stremioFavs = if (had) {
-                                            stremioFavs.filterNot { it.type == title.type && it.id == title.id }
-                                        } else {
-                                            listOf(title) + stremioFavs
-                                        }
-                                        stremioFavStore.save(stremioFavs)
-                                        note = if (had) "Removed ${title.name} from Favourites" else "Added ${title.name} to Favourites"
-                                    },
-                                    search = { query ->
-                                        val addons = (stremioState as? StremioState.Ready)?.home?.addons ?: emptyList()
-                                        stremioRepo.search(addons, query)
-                                    },
-                                    byGenre = { type, genre ->
-                                        val addons = (stremioState as? StremioState.Ready)?.home?.addons ?: emptyList()
-                                        stremioRepo.byGenre(addons, type, genre)
-                                    },
-                                    loadDetails = { title ->
-                                        val addons = (stremioState as? StremioState.Ready)?.home?.addons ?: emptyList()
-                                        stremioRepo.details(addons, title)
-                                    },
-                                    loadStreams = { type, videoId ->
-                                        val addons = (stremioState as? StremioState.Ready)?.home?.addons ?: emptyList()
-                                        stremioRepo.streams(addons, type, videoId)
-                                    },
-                                    onPlay = { title, video, stream ->
-                                        playRequest = PlayRequest(
-                                            listOf(
-                                                PlayItem(
-                                                    key = if (video != null) "stremio:series:${title.id}|${video.id}" else "stremio:${title.type}:${title.id}",
-                                                    title = title.name,
-                                                    subtitle = if (video != null) "S${video.season} E${video.episode}  ${video.title}" else title.year,
-                                                    url = stream.url,
-                                                    kind = if (video != null) PlayKind.EPISODE else PlayKind.MOVIE,
-                                                    imageUrl = title.poster,
-                                                )
-                                            ),
-                                            0,
-                                        )
-                                    },
-                                ),
+                                actions = stremioActions,
                             )
                         },
                         libraryContent = {
@@ -452,6 +464,12 @@ class MainActivity : ComponentActivity() {
                                     recentKeys = historyStore.recentChannels()
                                     note = "Watch history cleared"
                                 },
+                                stremioSummary = when {
+                                    stremio.signedIn -> "Signed in as ${stremio.email.ifBlank { "your Stremio account" }}"
+                                    stremio.manualAddons.isNotEmpty() -> "${stremio.manualAddons.size} addon link(s) added. Not signed in."
+                                    else -> "Not signed in"
+                                },
+                                stremioContent = { StremioAccountPage(session = stremio, actions = stremioActions) },
                                 providersContent = {
                             ProvidersScreen(
                                 providers = providers,
@@ -540,6 +558,7 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 }
+            }
             }
         }
     }
