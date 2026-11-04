@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,8 +16,11 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -26,7 +30,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -35,8 +41,8 @@ import androidx.tv.material3.Text
 import com.skyqlike.iptv.data.epg.EpgTime
 import com.skyqlike.iptv.data.model.Channel
 import com.skyqlike.iptv.data.model.Programme
+import com.skyqlike.iptv.ui.common.Artwork
 import com.skyqlike.iptv.ui.home.FocusTile
-import com.skyqlike.iptv.ui.home.tileBrush
 import com.skyqlike.iptv.ui.theme.Palette
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
@@ -45,8 +51,8 @@ import java.util.Locale
 
 // How wide the timeline is: every minute of TV is 6dp wide, so 30 minutes is 180dp.
 private val DpPerMinute = 6.dp
-private val ChannelColumnWidth = 190.dp
-private val RowHeight = 68.dp
+private val ChannelColumnWidth = 220.dp
+private val RowHeight = 72.dp
 
 private data class Selection(val channel: Channel, val programme: Programme?)
 
@@ -56,6 +62,7 @@ fun GuideScreen(
     epg: Map<String, List<Programme>>,
     status: String,
     onPlay: (Channel) -> Unit,
+    previewEnabled: Boolean = true,
 ) {
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -70,18 +77,27 @@ fun GuideScreen(
     val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
     var selected by remember { mutableStateOf<Selection?>(null) }
 
+    // Channel category filter: null means every channel.
+    var category by remember { mutableStateOf<String?>(null) }
+    val groups = remember(channels) { channels.map { it.group.ifBlank { "Other" } }.distinct() }
+    val visible = remember(channels, category) {
+        if (category == null) channels else channels.filter { it.group.ifBlank { "Other" } == category }
+    }
+    LaunchedEffect(category) { selected = null }
+
     if (epg.isEmpty()) {
         NoGuide(status)
     } else {
         // Until the user moves, show the first channel's current programme.
-        val shown = selected ?: channels.firstOrNull()?.let { ch ->
+        val shown = selected ?: visible.firstOrNull()?.let { ch ->
             val list = ch.epgId?.let { epg[it] }
             Selection(ch, list?.firstOrNull { nowMs >= it.start && nowMs < it.stop })
         }
         val totalWidth = DpPerMinute * (EpgTime.GUIDE_HOURS * 60)
 
         Column(Modifier.fillMaxSize()) {
-            InfoPanel(shown, nowMs, timeFormat, onPlay)
+            InfoPanel(shown, nowMs, timeFormat, onPlay, previewEnabled)
+            CategoryBar(groups, category) { category = it }
 
             // Time labels along the top, scrolling together with the rows below.
             Row(Modifier.fillMaxWidth().height(30.dp).background(Palette.Rail)) {
@@ -104,7 +120,7 @@ fun GuideScreen(
             }
 
             LazyColumn(Modifier.fillMaxSize()) {
-                items(channels, key = { it.id }) { channel ->
+                items(visible, key = { it.id }) { channel ->
                     val list = channel.epgId?.let { epg[it] }
                     Row(Modifier.fillMaxWidth().height(RowHeight)) {
                         Box(
@@ -112,17 +128,25 @@ fun GuideScreen(
                                 .width(ChannelColumnWidth)
                                 .fillMaxHeight()
                                 .background(Palette.Rail)
-                                .padding(horizontal = 12.dp),
+                                .padding(horizontal = 10.dp),
                             contentAlignment = Alignment.CenterStart,
                         ) {
-                            Text(
-                                channel.name,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Palette.TextPrimary,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Artwork(
+                                    url = channel.logoUrl,
+                                    seed = channel.name,
+                                    modifier = Modifier.width(52.dp).height(36.dp).clip(RoundedCornerShape(8.dp)),
+                                    contentScale = ContentScale.Fit,
+                                )
+                                Text(
+                                    channel.name,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Palette.TextPrimary,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                         }
                         // All rows share one scroll position, so the whole grid moves together.
                         Box(Modifier.weight(1f).fillMaxHeight().horizontalScroll(scroll)) {
@@ -155,6 +179,21 @@ fun GuideScreen(
     }
 }
 
+/** Colour for the edge of a programme box, by what kind of programme it is. */
+private fun genreColor(genre: String): Color {
+    val g = genre.lowercase()
+    return when {
+        g.contains("sport") || g.contains("football") || g.contains("soccer") || g.contains("racing") -> Color(0xFF22C55E)
+        g.contains("movie") || g.contains("film") || g.contains("cinema") -> Color(0xFFF59E0B)
+        g.contains("kid") || g.contains("child") || g.contains("cartoon") || g.contains("animation") -> Color(0xFF38BDF8)
+        g.contains("news") || g.contains("current") || g.contains("weather") -> Color(0xFFE23744)
+        g.contains("document") || g.contains("factual") || g.contains("nature") || g.contains("science") || g.contains("history") -> Color(0xFF14B8A6)
+        g.contains("drama") || g.contains("series") || g.contains("soap") -> Color(0xFFA855F7)
+        g.contains("music") || g.contains("concert") -> Color(0xFFEC4899)
+        else -> Color(0xFF6B7280)
+    }
+}
+
 @Composable
 private fun ProgrammeCell(
     channel: Channel,
@@ -184,7 +223,15 @@ private fun ProgrammeCell(
         focusedScale = 1.03f,
         backgroundColor = if (isNow) Color(0xFF26304D) else Palette.Panel,
     ) {
-        Column(Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 6.dp)) {
+        // A coloured edge shows the kind of programme at a glance.
+        Box(
+            Modifier
+                .align(Alignment.CenterStart)
+                .fillMaxHeight()
+                .width(5.dp)
+                .background(genreColor(programme.genre))
+        )
+        Column(Modifier.fillMaxSize().padding(start = 16.dp, end = 10.dp, top = 6.dp, bottom = 6.dp)) {
             Text(
                 programme.title,
                 fontSize = 15.sp,
@@ -219,26 +266,20 @@ private fun InfoPanel(
     nowMs: Long,
     timeFormat: SimpleDateFormat,
     onPlay: (Channel) -> Unit,
+    previewEnabled: Boolean,
 ) {
     val p = sel?.programme
     Row(
-        Modifier.fillMaxWidth().height(170.dp).background(Palette.Panel).padding(20.dp),
-        horizontalArrangement = Arrangement.spacedBy(20.dp),
+        Modifier.fillMaxWidth().height(150.dp).background(Palette.Panel).padding(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Box(
-            Modifier
-                .width(240.dp)
-                .fillMaxHeight()
-                .background(tileBrush(p?.title ?: sel?.channel?.name ?: "guide")),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                (p?.title ?: sel?.channel?.name ?: "TV").take(1).uppercase(),
-                fontSize = 54.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White.copy(alpha = 0.35f),
-            )
-        }
+        // A small live picture of the channel the guide is pointing at.
+        GuidePreview(
+            channel = sel?.channel,
+            enabled = previewEnabled,
+            onOpen = { sel?.channel?.let(onPlay) },
+            modifier = Modifier.width(224.dp).fillMaxHeight(),
+        )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (sel == null || p == null) {
                 Text(
@@ -270,7 +311,7 @@ private fun InfoPanel(
                         p.description,
                         fontSize = 15.sp,
                         color = Palette.TextSecondary,
-                        maxLines = 3,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
@@ -295,6 +336,38 @@ private fun InfoPanel(
                         color = Palette.TextSecondary,
                     )
                 }
+            }
+        }
+    }
+}
+
+/** A scrolling row of category buttons. Pick one to show only those channels in the guide. */
+@Composable
+private fun CategoryBar(groups: List<String>, selected: String?, onPick: (String?) -> Unit) {
+    val options: List<String?> = listOf<String?>(null) + groups
+    LazyRow(
+        Modifier.fillMaxWidth().background(Palette.Rail),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        itemsIndexed(options) { _, group ->
+            val label = group ?: "All channels"
+            val on = group == selected
+            FocusTile(
+                onClick = { onPick(group) },
+                modifier = Modifier.width((label.length * 9 + 36).dp).height(34.dp),
+                corner = 17.dp,
+                focusedScale = 1.05f,
+                backgroundColor = if (on) Palette.Accent else Color(0x26FFFFFF),
+            ) {
+                Text(
+                    label,
+                    fontSize = 14.sp,
+                    fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.align(Alignment.Center).padding(horizontal = 8.dp),
+                )
             }
         }
     }

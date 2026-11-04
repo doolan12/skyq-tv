@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -55,6 +56,7 @@ import com.skyqlike.iptv.ui.common.HomeTile
 import com.skyqlike.iptv.ui.common.Rail
 import com.skyqlike.iptv.ui.common.RailRow
 import com.skyqlike.iptv.ui.home.FocusTile
+import com.skyqlike.iptv.ui.home.ImmersiveEffect
 import com.skyqlike.iptv.ui.providers.ActionButton
 import com.skyqlike.iptv.ui.providers.LabeledField
 import com.skyqlike.iptv.ui.theme.Palette
@@ -88,6 +90,7 @@ fun StremioScreen(
 ) {
     var showManage by remember { mutableStateOf(false) }
     var openItem by remember { mutableStateOf<StremioItem?>(null) }
+    var autoPlay by remember { mutableStateOf(false) }
 
     LaunchedEffect(state, session) {
         if (state is StremioState.Idle && session.hasAnything) actions.onNeedData()
@@ -106,13 +109,18 @@ fun StremioScreen(
             item,
             actions,
             isFavourite = favourites.any { it.type == item.type && it.id == item.id },
-        ) { openItem = null }
+            autoPlay = autoPlay,
+        ) {
+            openItem = null
+            autoPlay = false
+        }
         else -> Browse(
             state = state,
             continueEntries = continueEntries,
             favourites = favourites,
             actions = actions,
-            onOpen = { openItem = it },
+            onOpen = { openItem = it; autoPlay = false },
+            onPlay = { openItem = it; autoPlay = true },
             onManage = { showManage = true },
         )
     }
@@ -120,8 +128,13 @@ fun StremioScreen(
 
 // ---------------------------------------------------------------------------- browse
 
+/** The accent colour of the Stremio section. */
+private val NetRed = Color(0xFFE23744)
+
 /** A row on the browse page, with the size its tiles are drawn at. */
 private class RailSpec(val rail: Rail, val width: Dp, val height: Dp)
+
+private val TabNames = listOf("Movies", "Series", "My List", "Search")
 
 @Composable
 private fun Browse(
@@ -130,6 +143,7 @@ private fun Browse(
     favourites: List<StremioItem>,
     actions: StremioActions,
     onOpen: (StremioItem) -> Unit,
+    onPlay: (StremioItem) -> Unit,
     onManage: () -> Unit,
 ) {
     var tab by remember { mutableIntStateOf(0) }
@@ -138,8 +152,10 @@ private fun Browse(
     var genre by remember { mutableStateOf<String?>(null) }
     var genreRows by remember { mutableStateOf<List<StremioRow>?>(null) }
     var heroIndex by remember { mutableIntStateOf(0) }
-    val type = if (tab == 0) "movie" else "series"
-    val searching = query.trim().length >= 2
+
+    val browsing = tab == 0 || tab == 1
+    val type = if (tab == 1) "series" else "movie"
+    val searching = tab == 3 && query.trim().length >= 2
 
     // Searches a moment after you stop typing.
     LaunchedEffect(query) {
@@ -152,218 +168,274 @@ private fun Browse(
             results = runCatching { actions.search(q) }.getOrDefault(emptyList())
         }
     }
-
-    // Fetches the chosen genre from the addons whenever the genre or the Movies/Series tab changes.
+    // Fetches the chosen genre from the addons whenever the genre or the tab changes.
     LaunchedEffect(genre, tab) {
         val g = genre
         genreRows = null
-        if (g != null) genreRows = runCatching { actions.byGenre(type, g) }.getOrDefault(emptyList())
+        if (g != null && browsing) genreRows = runCatching { actions.byGenre(type, g) }.getOrDefault(emptyList())
     }
     // A different tab has different genres, so start again from "All".
     LaunchedEffect(tab) { genre = null; heroIndex = 0 }
 
     // The big banner at the top shows a few popular titles, one after the other.
-    val heroItems: List<StremioItem> = (state as? StremioState.Ready)?.home?.rows.orEmpty()
-        .filter { it.type == type }
-        .flatMap { it.items }
-        .filter { !it.background.isNullOrBlank() || !it.poster.isNullOrBlank() }
-        .distinctBy { it.id }
-        .take(5)
+    val heroItems: List<StremioItem> = if (!browsing) emptyList() else {
+        (state as? StremioState.Ready)?.home?.rows.orEmpty()
+            .filter { it.type == type }
+            .flatMap { it.items }
+            .filter { !it.background.isNullOrBlank() || !it.poster.isNullOrBlank() }
+            .distinctBy { it.id }
+            .take(6)
+    }
     LaunchedEffect(heroItems.size, tab) {
         while (heroItems.size > 1) {
-            delay(8000)
+            delay(9000)
             heroIndex = (heroIndex + 1) % heroItems.size
         }
     }
 
-    Column(Modifier.fillMaxSize().padding(top = 20.dp)) {
-        Row(
-            Modifier.padding(horizontal = 36.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            ActionButton("Movies", Modifier.width(110.dp), accent = tab == 0) { tab = 0 }
-            ActionButton("Series", Modifier.width(110.dp), accent = tab == 1) { tab = 1 }
-            ActionButton("Manage", Modifier.width(110.dp)) { onManage() }
+    when (state) {
+        is StremioState.Idle, is StremioState.Loading -> Column(Modifier.fillMaxSize()) {
+            TabBar(tab, { tab = it }, onManage)
+            Note("Loading your Stremio addons...")
         }
-        Spacer(Modifier.height(8.dp))
-
-        when (state) {
-            is StremioState.Idle, is StremioState.Loading -> Note("Loading your Stremio addons...")
-            is StremioState.Error -> Column(
-                Modifier.padding(horizontal = 36.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
+        is StremioState.Error -> Column(Modifier.fillMaxSize()) {
+            TabBar(tab, { tab = it }, onManage)
+            Column(Modifier.padding(horizontal = 40.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(state.message, fontSize = 17.sp, color = Palette.TextSecondary)
-                ActionButton("Try again", Modifier.width(150.dp), accent = true) { actions.onNeedData() }
+                ActionButton("Try again", Modifier.width(150.dp), accent = true, accentColor = NetRed) { actions.onNeedData() }
             }
-            is StremioState.Ready -> {
-                val toggle: (StremioItem) -> Unit = { actions.onToggleFavourite(it) }
-                val rails = ArrayList<RailSpec>()
-                val hits = results?.filter { it.type == type }
-                val showBanner = !searching && genre == null && heroItems.isNotEmpty()
+        }
+        is StremioState.Ready -> {
+            val toggle: (StremioItem) -> Unit = { actions.onToggleFavourite(it) }
+            val rails = ArrayList<RailSpec>()
 
-                if (searching) {
-                    if (hits != null) {
-                        rails += RailSpec(Rail("Results for \"${query.trim()}\"", hits.map { tileFor(it, onOpen, toggle) }), 150.dp, 225.dp)
-                    }
-                } else if (genre != null) {
+            fun add(title: String, items: List<StremioItem>, w: Dp = 150.dp, h: Dp = 225.dp) {
+                if (items.isNotEmpty()) rails += RailSpec(Rail(title, items.map { tileFor(it, onOpen, toggle) }), w, h)
+            }
+
+            fun addContinue(filterType: String?) {
+                val cont = continueEntries.mapNotNull { e -> entryToItem(e)?.let { e to it } }
+                    .filter { filterType == null || it.second.type == filterType }
+                    .distinctBy { it.second.type + ":" + it.second.id }
+                if (cont.isEmpty()) return
+                rails += RailSpec(
+                    Rail(
+                        "Continue Watching",
+                        cont.map { (e, found) ->
+                            HomeTile(
+                                id = "cw:" + e.key,
+                                title = found.name,
+                                subtitle = e.subtitle,
+                                imageUrl = found.poster,
+                                progress = if (e.durationMs > 0) e.positionMs.toFloat() / e.durationMs else null,
+                                progressColor = NetRed,
+                            ) { onOpen(found) }
+                        },
+                    ),
+                    220.dp, 124.dp,
+                )
+            }
+
+            val hits = results
+            when {
+                tab == 3 -> if (searching && hits != null) {
+                    add("Movies", hits.filter { it.type == "movie" })
+                    add("Series", hits.filter { it.type == "series" })
+                }
+                tab == 2 -> {
+                    addContinue(null)
+                    add("My Movies", favourites.filter { it.type == "movie" }, 130.dp, 195.dp)
+                    add("My Series", favourites.filter { it.type == "series" }, 130.dp, 195.dp)
+                }
+                genre != null -> {
                     val g = genre!!
                     val fromAddons = genreRows
                     if (fromAddons != null) {
-                        fromAddons.forEach { row -> rails += RailSpec(Rail(row.title, row.items.map { tileFor(it, onOpen, toggle) }), 150.dp, 225.dp) }
+                        fromAddons.forEach { row -> add(row.title, row.items) }
                         if (rails.isEmpty()) {
                             // The addons couldn't filter by genre, so filter what's already on screen.
                             val seen = HashSet<String>()
                             val local = state.home.rows.filter { it.type == type }.flatMap { it.items }
                                 .filter { it.genres.any { x -> x.equals(g, true) } && seen.add(it.id) }
-                            if (local.isNotEmpty()) rails += RailSpec(Rail(g, local.map { tileFor(it, onOpen, toggle) }), 150.dp, 225.dp)
+                            add(g, local)
                         }
                     }
-                } else {
-                    // Things you were part-way through (each series once, at the episode you got to).
-                    val cont = continueEntries.mapNotNull { e -> entryToItem(e)?.let { e to it } }
-                        .filter { it.second.type == type }
-                        .distinctBy { it.second.id }
-                    if (cont.isNotEmpty()) {
-                        rails += RailSpec(
-                            Rail(
-                                "Continue Watching",
-                                cont.map { (e, found) ->
-                                    HomeTile(
-                                        id = "cw:" + e.key,
-                                        title = found.name,
-                                        subtitle = e.subtitle,
-                                        imageUrl = found.poster,
-                                        progress = if (e.durationMs > 0) e.positionMs.toFloat() / e.durationMs else null,
-                                    ) { onOpen(found) }
-                                },
-                            ),
-                            220.dp, 124.dp,
-                        )
-                    }
-                    val favs = favourites.filter { it.type == type }
-                    if (favs.isNotEmpty()) {
-                        rails += RailSpec(Rail("My Favourites", favs.map { tileFor(it, onOpen, toggle) }), 130.dp, 195.dp)
-                    }
-                    state.home.rows.filter { it.type == type }.forEach { row: StremioRow ->
-                        rails += RailSpec(Rail(row.title, row.items.map { tileFor(it, onOpen, toggle) }), 150.dp, 225.dp)
-                    }
                 }
-
-                val genreList: List<String> = run {
-                    val fromLists = state.home.addons.flatMap { a ->
-                        a.catalogs.filter { it.type == type && it.genreOnly }.flatMap { it.genreOptions }
-                    }
-                    val all = fromLists.ifEmpty {
-                        state.home.rows.filter { it.type == type }.flatMap { it.items }.flatMap { it.genres }
-                    }
-                    all.distinctBy { it.lowercase() }.take(40)
+                else -> {
+                    addContinue(type)
+                    state.home.rows.filter { it.type == type }.forEach { row: StremioRow -> add(row.title, row.items) }
                 }
-                val names = state.home.addons.joinToString(", ") { it.name }
-                val addonNote = "${state.home.addons.size} addon(s) loaded: $names" +
-                    if (state.home.failedAddons > 0) "  |  ${state.home.failedAddons} couldn't be reached" else ""
+            }
 
-                LazyColumn(
-                    Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
-                    contentPadding = PaddingValues(bottom = 40.dp),
-                ) {
-                    if (showBanner) {
-                        item {
+            val genreList: List<String> = if (!browsing) emptyList() else run {
+                val fromLists = state.home.addons.flatMap { a ->
+                    a.catalogs.filter { it.type == type && it.genreOnly }.flatMap { it.genreOptions }
+                }
+                val all = fromLists.ifEmpty {
+                    state.home.rows.filter { it.type == type }.flatMap { it.items }.flatMap { it.genres }
+                }
+                all.distinctBy { it.lowercase() }.take(40)
+            }
+            val showBanner = browsing && genre == null && heroItems.isNotEmpty()
+            val names = state.home.addons.joinToString(", ") { it.name }
+            val addonNote = "${state.home.addons.size} addon(s) loaded: $names" +
+                if (state.home.failedAddons > 0) "  |  ${state.home.failedAddons} couldn't be reached" else ""
+
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = PaddingValues(bottom = 40.dp),
+            ) {
+                item {
+                    Box(Modifier.fillMaxWidth()) {
+                        if (showBanner) {
                             val hero = heroItems[heroIndex.coerceIn(0, heroItems.size - 1)]
-                            Hero(
+                            Billboard(
                                 item = hero,
                                 isFavourite = favourites.any { it.type == hero.type && it.id == hero.id },
-                                onOpen = { onOpen(hero) },
+                                onPlay = { onPlay(hero) },
+                                onInfo = { onOpen(hero) },
                                 onFavourite = { toggle(hero) },
                             )
                         }
+                        TabBar(tab, { tab = it }, onManage, Modifier.align(Alignment.TopStart))
                     }
-                    if (genreList.isNotEmpty() && !searching) {
-                        item {
-                            Row(
-                                Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 36.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                ActionButton("All", Modifier.width(80.dp), accent = genre == null) { genre = null }
-                                genreList.forEach { g ->
-                                    ActionButton(g, Modifier.width(150.dp), accent = genre.equals(g, true)) { genre = g }
-                                }
+                }
+                if (genreList.isNotEmpty()) {
+                    item {
+                        Row(
+                            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 40.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            ActionButton("All", Modifier.width(80.dp), accent = genre == null, accentColor = NetRed) { genre = null }
+                            genreList.forEach { g ->
+                                ActionButton(g, Modifier.width(150.dp), accent = genre.equals(g, true), accentColor = NetRed) { genre = g }
                             }
                         }
                     }
-                    item {
-                        Box(Modifier.fillMaxWidth().padding(horizontal = 36.dp)) {
-                            LabeledField("Search Stremio", query) { query = it }
-                        }
-                    }
-                    item { Text(addonNote, fontSize = 13.sp, color = Palette.TextSecondary, modifier = Modifier.padding(horizontal = 36.dp)) }
-                    if (searching && hits == null) {
-                        item { Note("Searching...") }
-                    } else if (!searching && genre != null && genreRows == null) {
-                        item { Note("Loading ${genre}...") }
-                    } else if (rails.isEmpty()) {
-                        item {
-                            Note(
-                                if (searching) {
-                                    "Nothing found."
-                                } else if (genre != null) {
-                                    "Nothing found for $genre. Try another genre."
-                                } else {
-                                    "None of your addons offer a plain list of ${if (tab == 0) "movies" else "series"}. " +
-                                        "Try the search box, or add Cinemeta in Stremio."
-                                }
-                            )
-                        }
-                    }
-                    itemsIndexed(rails, key = { i, r -> "$i|${r.rail.title}" }) { _, spec -> RailRow(spec.rail, spec.width, spec.height) }
                 }
+                if (tab == 3) {
+                    item {
+                        Box(Modifier.fillMaxWidth().padding(horizontal = 40.dp)) {
+                            LabeledField("Search movies and series", query) { query = it }
+                        }
+                    }
+                }
+                if (tab == 3 && !searching) {
+                    item { Note("Type at least 2 letters to search all your addons.") }
+                } else if (tab == 3 && hits == null) {
+                    item { Note("Searching...") }
+                } else if (browsing && genre != null && genreRows == null) {
+                    item { Note("Loading ${genre}...") }
+                } else if (rails.isEmpty()) {
+                    item {
+                        Note(
+                            when {
+                                tab == 3 -> "Nothing found."
+                                tab == 2 -> "Nothing here yet. Open a title and choose Add to My List, or hold OK on a poster."
+                                genre != null -> "Nothing found for $genre. Try another genre."
+                                else -> "None of your addons offer a plain list of ${if (tab == 0) "movies" else "series"}. " +
+                                    "Try Search, or add Cinemeta in Stremio."
+                            }
+                        )
+                    }
+                }
+                itemsIndexed(rails, key = { i, r -> "$i|${r.rail.title}" }) { _, spec -> RailRow(spec.rail, spec.width, spec.height) }
+                item { Text(addonNote, fontSize = 12.sp, color = Palette.TextSecondary, modifier = Modifier.padding(horizontal = 40.dp)) }
             }
         }
     }
 }
 
-/** The big featured banner at the top of the page. */
+/** The row of tabs along the top: Movies, Series, My List, Search, and the addon manager on the right. */
 @Composable
-private fun Hero(item: StremioItem, isFavourite: Boolean, onOpen: () -> Unit, onFavourite: () -> Unit) {
-    Box(
-        Modifier.padding(horizontal = 36.dp).fillMaxWidth().height(230.dp).clip(RoundedCornerShape(16.dp))
+private fun TabBar(tab: Int, onTab: (Int) -> Unit, onManage: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier.fillMaxWidth().padding(horizontal = 36.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+        TabNames.forEachIndexed { i, label ->
+            val on = tab == i
+            FocusTile(
+                onClick = { onTab(i) },
+                modifier = Modifier.width(112.dp).height(40.dp),
+                corner = 20.dp,
+                focusedScale = 1.05f,
+                backgroundColor = if (on) Color(0x4DFFFFFF) else Color(0x33000000),
+            ) {
+                Text(
+                    label,
+                    fontSize = 16.sp,
+                    fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
+                    color = if (on) Color.White else Color(0xFFD6D6DE),
+                    modifier = Modifier.align(Alignment.Center),
+                )
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        FocusTile(
+            onClick = onManage,
+            modifier = Modifier.width(100.dp).height(40.dp),
+            corner = 20.dp,
+            focusedScale = 1.05f,
+            backgroundColor = Color(0x33000000),
+        ) {
+            Text("Addons", fontSize = 15.sp, color = Color(0xFFD6D6DE), modifier = Modifier.align(Alignment.Center))
+        }
+    }
+}
+
+/** The big featured picture across the top of the page. */
+@Composable
+private fun Billboard(
+    item: StremioItem,
+    isFavourite: Boolean,
+    onPlay: () -> Unit,
+    onInfo: () -> Unit,
+    onFavourite: () -> Unit,
+) {
+    Box(Modifier.fillMaxWidth().height(340.dp)) {
         Artwork(item.background ?: item.poster, item.name, Modifier.fillMaxSize())
-        // Darkens the left side so the writing is easy to read over any picture.
+        // Dark on the left so the writing is easy to read, and fading into the page at the bottom.
         Box(
             Modifier.fillMaxSize().background(
-                Brush.horizontalGradient(listOf(Color.Black.copy(alpha = 0.9f), Color.Black.copy(alpha = 0.6f), Color.Transparent))
+                Brush.horizontalGradient(0f to Color.Black.copy(alpha = 0.92f), 0.55f to Color.Black.copy(alpha = 0.55f), 1f to Color.Transparent)
+            )
+        )
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(0f to Color.Transparent, 0.7f to Color.Transparent, 1f to Palette.Background)
             )
         )
         Column(
-            Modifier.fillMaxWidth(0.62f).padding(28.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            Modifier.align(Alignment.CenterStart).fillMaxWidth(0.5f).padding(start = 48.dp, top = 56.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                if (item.type == "series") "FEATURED SERIES" else "FEATURED MOVIE",
-                fontSize = 12.sp,
-                color = Palette.Accent,
+                if (item.type == "series") "SERIES" else "FILM",
+                fontSize = 13.sp,
+                color = NetRed,
                 fontWeight = FontWeight.Bold,
             )
             Text(
                 item.name,
-                fontSize = 30.sp,
+                fontSize = 38.sp,
                 fontWeight = FontWeight.Bold,
-                color = Palette.TextPrimary,
-                maxLines = 1,
+                color = Color.White,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
             val meta = listOf(item.year, item.genres.take(3).joinToString(", "), if (item.rating.isNotBlank()) "Rating ${item.rating}" else "")
-                .filter { it.isNotBlank() }.joinToString("  |  ")
-            if (meta.isNotBlank()) Text(meta, fontSize = 14.sp, color = Palette.TextSecondary)
+                .filter { it.isNotBlank() }.joinToString("   |   ")
+            if (meta.isNotBlank()) Text(meta, fontSize = 14.sp, color = Color(0xFFD0D0D8))
             if (item.description.isNotBlank()) {
-                Text(item.description, fontSize = 14.sp, color = Palette.TextSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(item.description, fontSize = 14.sp, color = Color(0xFFC0C0C8), maxLines = 3, overflow = TextOverflow.Ellipsis)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 6.dp)) {
-                ActionButton("View", Modifier.width(110.dp), accent = true) { onOpen() }
-                ActionButton(if (isFavourite) "Remove Favourite" else "Add Favourite", Modifier.width(180.dp)) { onFavourite() }
+                ActionButton("Play", Modifier.width(120.dp), accent = true, accentColor = Color.White, textColor = Color.Black) { onPlay() }
+                ActionButton("More Info", Modifier.width(130.dp)) { onInfo() }
+                ActionButton(if (isFavourite) "In My List" else "My List", Modifier.width(130.dp)) { onFavourite() }
             }
         }
     }
@@ -400,10 +472,14 @@ private fun entryToItem(e: HistoryEntry): StremioItem? {
 private data class Pick(val video: StremioVideo?)
 
 @Composable
-private fun Details(start: StremioItem, actions: StremioActions, isFavourite: Boolean, onBack: () -> Unit) {
+private fun Details(start: StremioItem, actions: StremioActions, isFavourite: Boolean, autoPlay: Boolean, onBack: () -> Unit) {
     BackHandler(onBack = onBack)
+    // Full screen: the side menu steps out of the way.
+    ImmersiveEffect(true)
     var info by remember(start.id) { mutableStateOf(start) }
-    var picking by remember(start.id) { mutableStateOf<Pick?>(null) }
+    var picking by remember(start.id) {
+        mutableStateOf<Pick?>(if (autoPlay && start.type != "series") Pick(null) else null)
+    }
     var season by remember(start.id) { mutableIntStateOf(-1) }
 
     LaunchedEffect(start.id) {
@@ -420,97 +496,123 @@ private fun Details(start: StremioItem, actions: StremioActions, isFavourite: Bo
     LaunchedEffect(start.id) { runCatching { playFocus.requestFocus() } }
 
     val meta = listOf(info.year, info.genres.take(3).joinToString(", "), info.runtime, if (info.rating.isNotBlank()) "Rating ${info.rating}" else "")
-        .filter { it.isNotBlank() }.joinToString("  |  ")
+        .filter { it.isNotBlank() }.joinToString("   |   ")
+    val listLabel = if (isFavourite) "Remove from My List" else "Add to My List"
 
-    if (info.type == "series") {
-        val seasons = info.videos.map { it.season }.distinct().sorted()
-        val current = if (season in seasons) season else seasons.firstOrNull { it > 0 } ?: seasons.firstOrNull() ?: 1
-        val episodes = info.videos.filter { it.season == current }
-        LazyColumn(
-            Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(36.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                    Artwork(info.poster, info.name, Modifier.width(110.dp).height(165.dp).clip(RoundedCornerShape(12.dp)))
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(info.name, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
-                        if (meta.isNotBlank()) Text(meta, fontSize = 15.sp, color = Palette.Accent)
+    Box(Modifier.fillMaxSize()) {
+        Artwork(info.background ?: info.poster, info.name, Modifier.fillMaxSize())
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.horizontalGradient(0f to Color.Black.copy(alpha = 0.96f), 0.55f to Color.Black.copy(alpha = 0.8f), 1f to Color.Black.copy(alpha = 0.3f))
+            )
+        )
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(0f to Color.Transparent, 0.7f to Color.Transparent, 1f to Palette.Background)
+            )
+        )
+
+        if (info.type == "series") {
+            val seasons = info.videos.map { it.season }.distinct().sorted()
+            val current = if (season in seasons) season else seasons.firstOrNull { it > 0 } ?: seasons.firstOrNull() ?: 1
+            val episodes = info.videos.filter { it.season == current }
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 56.dp, end = 56.dp, top = 48.dp, bottom = 40.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                item {
+                    Column(Modifier.fillMaxWidth(0.58f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(info.name, fontSize = 42.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        if (meta.isNotBlank()) Text(meta, fontSize = 15.sp, color = Color(0xFFD0D0D8))
                         Text(
                             info.description.ifBlank { "No description." },
                             fontSize = 15.sp,
-                            color = Palette.TextSecondary,
-                            maxLines = 2,
+                            color = Color(0xFFC0C0C8),
+                            maxLines = 3,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 6.dp)) {
                             ActionButton(
                                 if (episodes.isEmpty()) "Loading..." else "Play S$current E${episodes.first().episode}",
                                 Modifier.width(190.dp).focusRequester(playFocus),
                                 accent = true,
+                                accentColor = Color.White,
+                                textColor = Color.Black,
                             ) { episodes.firstOrNull()?.let { picking = Pick(it) } }
-                            ActionButton(if (isFavourite) "Remove Favourite" else "Add Favourite", Modifier.width(180.dp)) { actions.onToggleFavourite(info) }
-                            ActionButton("Back", Modifier.width(120.dp)) { onBack() }
+                            ActionButton(listLabel, Modifier.width(210.dp)) { actions.onToggleFavourite(info) }
+                            ActionButton("Back", Modifier.width(110.dp)) { onBack() }
                         }
                     }
                 }
-            }
-            if (seasons.size > 1) {
-                item {
-                    Row(
-                        Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        seasons.forEach { s ->
-                            ActionButton(if (s == 0) "Specials" else "Season $s", Modifier.width(130.dp), accent = s == current) { season = s }
+                if (seasons.size > 1) {
+                    item {
+                        Row(
+                            Modifier.horizontalScroll(rememberScrollState()).padding(top = 10.dp, bottom = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            seasons.forEach { sn ->
+                                ActionButton(if (sn == 0) "Specials" else "Season $sn", Modifier.width(130.dp), accent = sn == current, accentColor = NetRed) { season = sn }
+                            }
                         }
                     }
                 }
-            }
-            items(episodes, key = { it.id }) { ep ->
-                FocusTile(
-                    onClick = { picking = Pick(ep) },
-                    modifier = Modifier.fillMaxWidth().height(64.dp),
-                    corner = 10.dp,
-                    focusedScale = 1.02f,
-                ) {
-                    Row(
-                        Modifier.fillMaxSize().padding(horizontal = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                items(episodes, key = { it.id }) { ep ->
+                    FocusTile(
+                        onClick = { picking = Pick(ep) },
+                        modifier = Modifier.fillMaxWidth(0.75f).height(88.dp),
+                        corner = 12.dp,
+                        focusedScale = 1.02f,
+                        backgroundColor = Color(0xB3000000),
                     ) {
-                        Text("E${ep.episode}", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Palette.Accent)
-                        Text(
-                            ep.title,
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Palette.TextPrimary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
-                        )
+                        Row(
+                            Modifier.fillMaxSize().padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        ) {
+                            Artwork(ep.thumbnail ?: info.poster, ep.title.ifBlank { info.name }, Modifier.width(130.dp).fillMaxHeight().clip(RoundedCornerShape(8.dp)))
+                            Column(Modifier.weight(1f)) {
+                                Text("Episode ${ep.episode}", fontSize = 13.sp, color = Palette.TextSecondary)
+                                Text(
+                                    ep.title.ifBlank { "Episode ${ep.episode}" },
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
                     }
                 }
+                if (info.videos.isEmpty()) {
+                    item { Text("Loading episodes... If this stays empty, none of your addons list episodes for this series.", fontSize = 15.sp, color = Palette.TextSecondary) }
+                }
             }
-            if (info.videos.isEmpty()) {
-                item { Text("Loading episodes... If this stays empty, none of your addons list episodes for this series.", fontSize = 15.sp, color = Palette.TextSecondary) }
-            }
-        }
-    } else {
-        Row(Modifier.fillMaxSize().padding(36.dp), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-            Artwork(info.poster, info.name, Modifier.width(200.dp).height(300.dp).clip(RoundedCornerShape(12.dp)))
+        } else {
             Column(
-                Modifier.weight(1f).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                Modifier.align(Alignment.CenterStart).fillMaxWidth(0.55f).padding(start = 56.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text(info.name, fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
-                if (meta.isNotBlank()) Text(meta, fontSize = 16.sp, color = Palette.Accent)
-                Text(info.description.ifBlank { "No description." }, fontSize = 16.sp, color = Palette.TextSecondary)
+                Text(info.name, fontSize = 44.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (meta.isNotBlank()) Text(meta, fontSize = 16.sp, color = Color(0xFFD0D0D8))
+                Text(
+                    info.description.ifBlank { "No description." },
+                    fontSize = 17.sp,
+                    color = Color(0xFFC0C0C8),
+                    maxLines = 6,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 8.dp)) {
-                    ActionButton("Play", Modifier.width(140.dp).focusRequester(playFocus), accent = true) { picking = Pick(null) }
-                    ActionButton(if (isFavourite) "Remove Favourite" else "Add Favourite", Modifier.width(180.dp)) { actions.onToggleFavourite(info) }
-                    ActionButton("Back", Modifier.width(120.dp)) { onBack() }
+                    ActionButton(
+                        "Play",
+                        Modifier.width(140.dp).focusRequester(playFocus),
+                        accent = true,
+                        accentColor = Color.White,
+                        textColor = Color.Black,
+                    ) { picking = Pick(null) }
+                    ActionButton(listLabel, Modifier.width(210.dp)) { actions.onToggleFavourite(info) }
+                    ActionButton("Back", Modifier.width(110.dp)) { onBack() }
                 }
             }
         }
@@ -626,6 +728,12 @@ private fun formatSize(bytes: Long): String {
 }
 
 // ---------------------------------------------------------------------------- connect / manage
+
+/** The sign-in and addon page, for use inside Settings. */
+@Composable
+fun StremioAccountPage(session: StremioSession, actions: StremioActions) {
+    ManagePage(session = session, actions = actions, canClose = false, onClose = {})
+}
 
 @Composable
 private fun ManagePage(session: StremioSession, actions: StremioActions, canClose: Boolean, onClose: () -> Unit) {

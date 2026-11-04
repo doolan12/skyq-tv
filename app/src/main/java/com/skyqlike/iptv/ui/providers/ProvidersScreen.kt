@@ -238,6 +238,8 @@ internal fun ActionButton(
     label: String,
     modifier: Modifier = Modifier,
     accent: Boolean = false,
+    accentColor: Color = Palette.Accent,
+    textColor: Color = Palette.TextPrimary,
     onClick: () -> Unit,
 ) {
     FocusTile(
@@ -245,10 +247,11 @@ internal fun ActionButton(
         modifier = modifier.height(44.dp),
         corner = 22.dp,
         focusedScale = 1.06f,
-        backgroundColor = if (accent) Palette.Accent else Color(0x26FFFFFF),
+        backgroundColor = if (accent) accentColor else Color(0x26FFFFFF),
     ) {
         Text(
             label,
+            color = if (accent) textColor else Palette.TextPrimary,
             fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.align(Alignment.Center),

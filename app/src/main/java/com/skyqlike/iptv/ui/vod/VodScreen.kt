@@ -1,6 +1,7 @@
 package com.skyqlike.iptv.ui.vod
 
 import androidx.activity.compose.BackHandler
+import com.skyqlike.iptv.ui.home.ImmersiveEffect
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -208,6 +209,7 @@ private fun MovieDetails(
     onBack: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
+    ImmersiveEffect(true)
     var info by remember(movie.id) { mutableStateOf(movie) }
     LaunchedEffect(movie.id) {
         info = runCatching { loadInfo(movie) }.getOrDefault(movie)
@@ -256,6 +258,7 @@ private fun SeriesDetails(
     onBack: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
+    ImmersiveEffect(true)
     var episodes by remember(series.id) { mutableStateOf<List<Episode>?>(null) }
     var error by remember(series.id) { mutableStateOf<String?>(null) }
     var season by remember(series.id) { mutableIntStateOf(-1) }

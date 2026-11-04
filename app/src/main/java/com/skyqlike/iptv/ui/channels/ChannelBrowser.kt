@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -20,12 +21,36 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
+import com.skyqlike.iptv.data.epg.progressAt
 import com.skyqlike.iptv.data.model.Channel
+import com.skyqlike.iptv.data.model.Programme
 import com.skyqlike.iptv.ui.common.HomeTile
 import com.skyqlike.iptv.ui.common.Rail
 import com.skyqlike.iptv.ui.common.RailRow
 import com.skyqlike.iptv.ui.providers.LabeledField
 import com.skyqlike.iptv.ui.theme.Palette
+
+/** Lets any channel page show what is on right now. Provided by the home screen. */
+val LocalNowOn = compositionLocalOf<(Channel) -> Programme?> { { null } }
+
+/** A channel card: logo, channel name, what is on now, and a bar showing how far through it is. */
+fun channelTile(
+    ch: Channel,
+    nowFor: (Channel) -> Programme?,
+    onPlay: (Channel) -> Unit,
+    onToggleFavourite: (Channel) -> Unit,
+): HomeTile {
+    val p = nowFor(ch)
+    return HomeTile(
+        id = ch.id,
+        title = ch.name,
+        subtitle = p?.title ?: ch.group,
+        imageUrl = ch.logoUrl,
+        fit = true,
+        onLongClick = { onToggleFavourite(ch) },
+        progress = p?.progressAt(System.currentTimeMillis()),
+    ) { onPlay(ch) }
+}
 
 /**
  * A page of channels, one row per category. Used for Live TV, Favourites,
@@ -46,9 +71,10 @@ fun ChannelBrowser(
         if (words.isEmpty()) channels
         else channels.filter { ch -> words.all { ch.name.contains(it, ignoreCase = true) || ch.group.contains(it, ignoreCase = true) } }
     }
-    val rails = remember(shown) {
+    val nowFor = LocalNowOn.current
+    val rails = remember(shown, nowFor) {
         shown.groupBy { it.group.ifBlank { "Other" } }.map { (group, list) ->
-            Rail(group, list.map { ch -> HomeTile(ch.id, ch.name, ch.group, ch.logoUrl, fit = true, onLongClick = { onToggleFavourite(ch) }) { onPlay(ch) } })
+            Rail(group, list.map { ch -> channelTile(ch, nowFor, onPlay, onToggleFavourite) })
         }
     }
 
@@ -85,7 +111,7 @@ fun ChannelBrowser(
                 verticalArrangement = Arrangement.spacedBy(18.dp),
                 contentPadding = PaddingValues(bottom = 40.dp),
             ) {
-                items(rails, key = { it.title }) { RailRow(it) }
+                items(rails, key = { it.title }) { RailRow(it, 250.dp, 140.dp) }
             }
         }
     }

@@ -64,12 +64,15 @@ fun SettingsScreen(
     onClearCache: () -> Unit,
     onClearHistory: () -> Unit,
     providersContent: @Composable () -> Unit,
+    stremioSummary: String = "",
+    stremioContent: @Composable () -> Unit = {},
 ) {
     var page by remember { mutableStateOf("main") }
     BackHandler(enabled = page != "main") { page = "main" }
 
     when (page) {
         "providers" -> providersContent()
+        "stremio" -> stremioContent()
         "playback" -> PlaybackPage(settings, onChange)
         "parental" -> ParentalPage(settings, onChange, adultUnlocked, onAdultUnlockedChange)
         "channels" -> ChannelsPage(settings, onChange, allChannels)
@@ -83,6 +86,7 @@ fun SettingsScreen(
             }
             LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 item { SettingRow("IPTV providers", summary = "In use: $providerName") { page = "providers" } }
+                item { SettingRow("Stremio account", summary = stremioSummary.ifBlank { "Sign in to Stremio and manage addons" }) { page = "stremio" } }
                 item { SettingRow("Playback", summary = "Picture size, subtitles, audio language, reconnecting") { page = "playback" } }
                 item { SettingRow("Channels", summary = "$visibleCount of ${allChannels.size} channels shown. Hide and reorder.") { page = "channels" } }
                 item { SettingRow("Parental controls", summary = parentalSummary) { page = "parental" } }

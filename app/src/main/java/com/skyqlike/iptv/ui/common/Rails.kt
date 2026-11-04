@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -36,6 +37,7 @@ data class HomeTile(
     val onLongClick: (() -> Unit)? = null,
     /** 0 to 1: how far through it you are. Shows a thin bar along the bottom of the tile. */
     val progress: Float? = null,
+    val progressColor: Color = Palette.Accent,
     val onClick: () -> Unit,
 )
 
@@ -74,7 +76,7 @@ fun PosterTile(tile: HomeTile, tileWidth: Dp, tileHeight: Dp) {
             onClick = tile.onClick,
             onLongClick = tile.onLongClick,
             modifier = Modifier.fillMaxWidth().height(tileHeight),
-            corner = 12.dp,
+            corner = 16.dp,
         ) {
             Box(Modifier.fillMaxSize()) {
                 Artwork(
@@ -89,7 +91,7 @@ fun PosterTile(tile: HomeTile, tileWidth: Dp, tileHeight: Dp) {
                         Modifier.align(Alignment.BottomStart)
                             .fillMaxWidth(done.coerceIn(0.03f, 1f))
                             .height(5.dp)
-                            .background(Palette.Accent)
+                            .background(tile.progressColor)
                     )
                 }
             }
