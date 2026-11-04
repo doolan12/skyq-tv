@@ -53,7 +53,7 @@ import com.skyqlike.iptv.ui.theme.Palette
 
 /** The menu down the left side, in the order from the brief. */
 val MenuItems = listOf(
-    "Home", "TV Guide", "Live TV", "Catch Up", "Movies", "Sports",
+    "Home", "TV Guide", "Live TV", "Catch Up", "Movies", "Stremio", "Sports",
     "Entertainment", "Documentaries", "Kids", "My Library", "Favourites", "Settings",
 )
 
@@ -101,6 +101,7 @@ fun HomeScreen(
     moviesContent: @Composable () -> Unit = {},
     libraryContent: @Composable () -> Unit = {},
     catchUpContent: @Composable () -> Unit = {},
+    stremioContent: @Composable () -> Unit = {},
 ) {
     var section by remember { mutableStateOf("Home") }
     val firstFocus = remember { FocusRequester() }
@@ -133,6 +134,7 @@ fun HomeScreen(
                 "Movies" -> moviesContent()
                 "My Library" -> libraryContent()
                 "Catch Up" -> catchUpContent()
+                "Stremio" -> stremioContent()
                 "Live TV" -> ChannelBrowser("Live TV", channels, "No channels loaded yet. Add a provider in Settings.", onPlay, onToggleFavourite)
                 "Favourites" -> ChannelBrowser(
                     "Favourites",

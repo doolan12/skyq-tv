@@ -38,8 +38,13 @@ import com.skyqlike.iptv.data.model.Programme
 import com.skyqlike.iptv.data.model.toPlayItem
 import com.skyqlike.iptv.data.provider.ProviderStore
 import com.skyqlike.iptv.data.settings.ChannelRules
+import com.skyqlike.iptv.data.stremio.StremioRepository
+import com.skyqlike.iptv.data.stremio.StremioState
+import com.skyqlike.iptv.data.stremio.StremioStore
 import com.skyqlike.iptv.data.settings.SettingsStore
 import com.skyqlike.iptv.ui.settings.SettingsScreen
+import com.skyqlike.iptv.ui.stremio.StremioActions
+import com.skyqlike.iptv.ui.stremio.StremioScreen
 import com.skyqlike.iptv.data.vod.VodRepository
 import com.skyqlike.iptv.data.vod.VodState
 import com.skyqlike.iptv.ui.catchup.CatchUpScreen
@@ -68,6 +73,8 @@ class MainActivity : ComponentActivity() {
                 val catchUpRepo = remember { CatchUpRepository() }
                 val favStore = remember { FavouritesStore(this@MainActivity) }
                 val settingsStore = remember { SettingsStore(this@MainActivity) }
+                val stremioRepo = remember { StremioRepository() }
+                val stremioStore = remember { StremioStore(this@MainActivity) }
                 val historyStore = remember { WatchHistoryStore(this@MainActivity) }
                 val sample = remember {
                     assets.open("sample.m3u").bufferedReader().use { M3uParser.parse(it.readText()) }
@@ -93,6 +100,14 @@ class MainActivity : ComponentActivity() {
                 var settings by remember { mutableStateOf(settingsStore.load()) }
                 var adultUnlocked by remember { mutableStateOf(false) } // forgotten each time the app starts
                 var guideTick by remember { mutableIntStateOf(0) }
+                var stremio by remember { mutableStateOf(stremioStore.load()) }
+                var stremioState by remember { mutableStateOf<StremioState>(StremioState.Idle) }
+
+                // Stremio titles are kept apart from the IPTV lists, and the other way round.
+                val iptvHistory = remember(history) { history.filterNot { it.key.startsWith("stremio:") } }
+                val stremioHistory = remember(history) {
+                    history.filter { it.key.startsWith("stremio:") && !it.finished && it.positionMs > 10_000 }
+                }
 
                 // The channels the user actually sees: hidden ones removed, categories in their order.
                 val shownChannels = remember(channels, settings, adultUnlocked) {
@@ -196,7 +211,7 @@ class MainActivity : ComponentActivity() {
                         onPlay = playChannel,
                         favouriteKeys = favourites,
                         recentKeys = recentKeys,
-                        continueWatching = history.filter { !it.finished && it.positionMs > 10_000 },
+                        continueWatching = iptvHistory.filter { !it.finished && it.positionMs > 10_000 },
                         onPlayHistory = playHistory,
                         onToggleFavourite = { ch ->
                             val key = ch.favKey
@@ -302,8 +317,90 @@ class MainActivity : ComponentActivity() {
                                 },
                             )
                         },
+                        stremioContent = {
+                            StremioScreen(
+                                session = stremio,
+                                state = stremioState,
+                                continueEntries = stremioHistory,
+                                actions = StremioActions(
+                                    onNeedData = {
+                                        if (stremioState is StremioState.Idle || stremioState is StremioState.Error) {
+                                            stremioState = StremioState.Loading
+                                            scope.launch {
+                                                stremioState = stremioRepo.loadHome(stremio).fold(
+                                                    onSuccess = { StremioState.Ready(it) },
+                                                    onFailure = { StremioState.Error(it.message ?: "Couldn't load Stremio.") },
+                                                )
+                                            }
+                                        }
+                                    },
+                                    onSignIn = { email, password ->
+                                        stremioRepo.login(email, password).fold(
+                                            onSuccess = { key ->
+                                                stremio = stremio.copy(email = email.trim(), authKey = key)
+                                                stremioStore.save(stremio)
+                                                stremioState = StremioState.Idle
+                                                null
+                                            },
+                                            onFailure = { it.message ?: "Couldn't sign in." },
+                                        )
+                                    },
+                                    onSignOut = {
+                                        stremio = stremio.copy(email = "", authKey = "")
+                                        stremioStore.save(stremio)
+                                        stremioState = StremioState.Idle
+                                    },
+                                    onAddAddon = { link ->
+                                        stremioRepo.addonFromLink(link).fold(
+                                            onSuccess = { found ->
+                                                val url = found.first
+                                                if (url !in stremio.manualAddons) {
+                                                    stremio = stremio.copy(manualAddons = stremio.manualAddons + url)
+                                                    stremioStore.save(stremio)
+                                                }
+                                                stremioState = StremioState.Idle
+                                                null
+                                            },
+                                            onFailure = { it.message ?: "Couldn't add that addon." },
+                                        )
+                                    },
+                                    onRemoveAddon = { url ->
+                                        stremio = stremio.copy(manualAddons = stremio.manualAddons - url)
+                                        stremioStore.save(stremio)
+                                        stremioState = StremioState.Idle
+                                    },
+                                    search = { query ->
+                                        val addons = (stremioState as? StremioState.Ready)?.home?.addons ?: emptyList()
+                                        stremioRepo.search(addons, query)
+                                    },
+                                    loadDetails = { title ->
+                                        val addons = (stremioState as? StremioState.Ready)?.home?.addons ?: emptyList()
+                                        stremioRepo.details(addons, title)
+                                    },
+                                    loadStreams = { type, videoId ->
+                                        val addons = (stremioState as? StremioState.Ready)?.home?.addons ?: emptyList()
+                                        stremioRepo.streams(addons, type, videoId)
+                                    },
+                                    onPlay = { title, video, stream ->
+                                        playRequest = PlayRequest(
+                                            listOf(
+                                                PlayItem(
+                                                    key = if (video != null) "stremio:series:${title.id}|${video.id}" else "stremio:${title.type}:${title.id}",
+                                                    title = title.name,
+                                                    subtitle = if (video != null) "S${video.season} E${video.episode}  ${video.title}" else title.year,
+                                                    url = stream.url,
+                                                    kind = if (video != null) PlayKind.EPISODE else PlayKind.MOVIE,
+                                                    imageUrl = title.poster,
+                                                )
+                                            ),
+                                            0,
+                                        )
+                                    },
+                                ),
+                            )
+                        },
                         libraryContent = {
-                            LibraryScreen(history = history, onPlay = playHistory)
+                            LibraryScreen(history = iptvHistory, onPlay = playHistory)
                         },
                         settingsContent = {
                             SettingsScreen(
