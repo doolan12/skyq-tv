@@ -56,6 +56,8 @@ data class StremioItem(
     /** The addon this came from, so its own details are asked for first. */
     val sourceBase: String = "",
     val videos: List<StremioVideo> = emptyList(),
+    /** The YouTube video id of the trailer, if the addon lists one. */
+    val trailerId: String? = null,
 )
 
 data class StremioRow(val title: String, val type: String, val items: List<StremioItem>)

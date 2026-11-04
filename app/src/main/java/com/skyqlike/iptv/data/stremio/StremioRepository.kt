@@ -314,7 +314,31 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
             runtime = str(m, "runtime") ?: item.runtime,
             sourceBase = item.sourceBase,
             videos = videos.sortedWith(compareBy({ it.season }, { it.episode })),
+            trailerId = trailerFrom(m) ?: item.trailerId,
         )
+    }
+
+    /** Finds the YouTube trailer an addon lists, in either of the two formats addons use. */
+    private fun trailerFrom(m: JSONObject): String? {
+        val streams = m.optJSONArray("trailerStreams")
+        if (streams != null) {
+            for (i in 0 until streams.length()) {
+                val t = streams.optJSONObject(i) ?: continue
+                val id = str(t, "ytId")
+                if (id != null) return id
+            }
+        }
+        val trailers = m.optJSONArray("trailers")
+        if (trailers != null) {
+            for (i in 0 until trailers.length()) {
+                val t = trailers.optJSONObject(i) ?: continue
+                val type = str(t, "type")
+                if (type != null && !type.equals("Trailer", ignoreCase = true)) continue
+                val id = str(t, "source")
+                if (id != null) return id
+            }
+        }
+        return null
     }
 
     // ------------------------------------------------------------------ streams

@@ -66,6 +66,8 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Text
+import com.skyqlike.iptv.data.intro.IntroRepository
+import com.skyqlike.iptv.data.intro.SkipSegment
 import com.skyqlike.iptv.data.model.PlayItem
 import com.skyqlike.iptv.ui.common.FocusTile
 import com.skyqlike.iptv.ui.theme.Palette
@@ -100,8 +102,10 @@ fun PlayerScreen(
     autoReconnect: Boolean = true,
     subtitlesOn: Boolean = false,
     audioLang: String = "",
+    skipIntroOn: Boolean = true,
 ) {
     val context = LocalContext.current
+    val introRepo = remember { IntroRepository() }
     val scope = rememberCoroutineScope()
 
     var index by remember { mutableIntStateOf(startIndex.coerceIn(0, items.lastIndex)) }
@@ -257,6 +261,14 @@ fun PlayerScreen(
         }
     }
 
+    // Where the intro (and recap) are, if the community database knows this episode.
+    var segments by remember { mutableStateOf<List<SkipSegment>>(emptyList()) }
+    LaunchedEffect(index) {
+        segments = emptyList()
+        if (skipIntroOn) segments = introRepo.segmentsFor(items[index].externalId)
+    }
+    val activeSkip = segments.firstOrNull { positionMs >= it.startMs - 1_000 && positionMs < it.endMs - 1_000 }
+
     val rootFocus = remember { FocusRequester() }
     val firstButtonFocus = remember { FocusRequester() }
     val pickerFocus = remember { FocusRequester() }
@@ -311,6 +323,13 @@ fun PlayerScreen(
             else -> Unit
         }
         if (!overlay && picker == null) {
+            // With the Skip button showing and the controls hidden, OK skips.
+            val skip = segments.firstOrNull { positionMs >= it.startMs - 1_000 && positionMs < it.endMs - 1_000 }
+            if (skip != null && (ev.key == Key.DirectionCenter || ev.key == Key.Enter || ev.key == Key.NumPadEnter)) {
+                exo.seekTo(skip.endMs)
+                positionMs = skip.endMs
+                return@handle true
+            }
             when (ev.key) {
                 Key.DirectionUp, Key.DirectionDown -> { overlay = true; true }
                 Key.DirectionLeft -> seekBy(-10_000)
@@ -355,6 +374,21 @@ fun PlayerScreen(
                     })
                 }
         )
+
+        // Skip Intro / Skip Recap, shown while that part is playing.
+        if (activeSkip != null && picker == null && !failed) {
+            PlayerButton(
+                if (overlay) activeSkip.label else activeSkip.label + "  (press OK)",
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 40.dp, bottom = if (overlay) 190.dp else 60.dp)
+                    .width(if (overlay) 190.dp else 270.dp),
+                accent = true,
+            ) {
+                exo.seekTo(activeSkip.endMs)
+                positionMs = activeSkip.endMs
+            }
+        }
 
         // Buffering / reconnecting / error message in the middle.
         if (buffering || statusMessage != null) {

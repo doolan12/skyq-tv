@@ -45,6 +45,7 @@ import com.skyqlike.iptv.ui.common.ActionButton
 import com.skyqlike.iptv.ui.common.Artwork
 import com.skyqlike.iptv.ui.common.FocusTile
 import com.skyqlike.iptv.ui.stremio.StremioActions
+import com.skyqlike.iptv.ui.trailer.TrailerPlayer
 import com.skyqlike.iptv.ui.theme.Palette
 
 /** Which episode is being played (null means it's a movie). */
@@ -69,6 +70,7 @@ fun DetailScreen(
         mutableStateOf<Pick?>(if (autoPlay && start.type != "series") Pick(null) else null)
     }
     var season by remember(start.id) { mutableIntStateOf(-1) }
+    var showTrailer by remember(start.id) { mutableStateOf(false) }
 
     LaunchedEffect(start.id) {
         info = runCatching { actions.loadDetails(start) }.getOrDefault(start)
@@ -81,7 +83,7 @@ fun DetailScreen(
     }
 
     val playFocus = remember { FocusRequester() }
-    LaunchedEffect(start.id) { runCatching { playFocus.requestFocus() } }
+    LaunchedEffect(start.id, showTrailer) { if (!showTrailer) runCatching { playFocus.requestFocus() } }
 
     val meta = listOf(info.year, info.genres.take(3).joinToString(", "), info.runtime, if (info.rating.isNotBlank()) "IMDb ${info.rating}" else "")
         .filter { it.isNotBlank() }.joinToString("   |   ")
@@ -129,6 +131,7 @@ fun DetailScreen(
                                 textColor = Color.Black,
                             ) { episodes.firstOrNull()?.let { picking = Pick(it) } }
                             ActionButton(listLabel, Modifier.width(170.dp)) { actions.onToggleFavourite(info) }
+                            if (info.trailerId != null) ActionButton("Trailer", Modifier.width(130.dp)) { showTrailer = true }
                             ActionButton("Back", Modifier.width(110.dp)) { onBack() }
                         }
                     }
@@ -200,9 +203,15 @@ fun DetailScreen(
                         textColor = Color.Black,
                     ) { picking = Pick(null) }
                     ActionButton(listLabel, Modifier.width(170.dp)) { actions.onToggleFavourite(info) }
+                    if (info.trailerId != null) ActionButton("Trailer", Modifier.width(130.dp)) { showTrailer = true }
                     ActionButton("Back", Modifier.width(110.dp)) { onBack() }
                 }
             }
+        }
+
+        val trailerId = info.trailerId
+        if (showTrailer && trailerId != null) {
+            TrailerPlayer(trailerId) { showTrailer = false }
         }
     }
 }

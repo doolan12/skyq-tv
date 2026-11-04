@@ -95,6 +95,11 @@ fun SettingsScreen(
             }
         }
         item {
+            SettingRow("Skip Intro button (where known)", onOff(settings.skipIntro)) {
+                onChange(settings.copy(skipIntro = !settings.skipIntro))
+            }
+        }
+        item {
             SettingRow("Resume where I left off", onOff(settings.resume)) {
                 onChange(settings.copy(resume = !settings.resume))
             }

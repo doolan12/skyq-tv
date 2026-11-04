@@ -206,6 +206,7 @@ private fun ReelApp(context: Context) {
                         url = stream.url,
                         kind = if (video != null) PlayKind.EPISODE else PlayKind.MOVIE,
                         imageUrl = title.poster,
+                        externalId = video?.id,
                     )
                 ),
                 0,
@@ -314,6 +315,7 @@ private fun ReelApp(context: Context) {
                 autoReconnect = settings.autoReconnect,
                 subtitlesOn = settings.subtitlesOn,
                 audioLang = settings.audioLang,
+                skipIntroOn = settings.skipIntro,
             )
         }
     }
