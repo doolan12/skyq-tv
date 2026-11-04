@@ -66,6 +66,7 @@ class StremioActions(
     val onAddAddon: suspend (link: String) -> String?,
     val onRemoveAddon: (link: String) -> Unit,
     val search: suspend (query: String) -> List<StremioItem>,
+    val byGenre: suspend (type: String, genre: String) -> List<StremioRow>,
     val loadDetails: suspend (StremioItem) -> StremioItem,
     val loadStreams: suspend (type: String, videoId: String) -> StremioStreams,
     val onPlay: (item: StremioItem, video: StremioVideo?, stream: StremioStream) -> Unit,
@@ -119,7 +120,10 @@ private fun Browse(
     var tab by remember { mutableIntStateOf(0) }
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<StremioItem>?>(null) }
+    var genre by remember { mutableStateOf<String?>(null) }
+    var genreRows by remember { mutableStateOf<List<StremioRow>?>(null) }
     val type = if (tab == 0) "movie" else "series"
+    val searching = query.trim().length >= 2
 
     // Searches a moment after you stop typing.
     LaunchedEffect(query) {
@@ -133,18 +137,26 @@ private fun Browse(
         }
     }
 
+    // Fetches the chosen genre from the addons whenever the genre or the Movies/Series tab changes.
+    LaunchedEffect(genre, tab) {
+        val g = genre
+        genreRows = null
+        if (g != null) genreRows = runCatching { actions.byGenre(type, g) }.getOrDefault(emptyList())
+    }
+    // A different tab has different genres, so start again from "All".
+    LaunchedEffect(tab) { genre = null }
+
     Column(Modifier.fillMaxSize().padding(top = 20.dp)) {
         Row(
-            Modifier.padding(horizontal = 36.dp),
+            Modifier.padding(horizontal = 36.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             ActionButton("Movies", Modifier.width(110.dp), accent = tab == 0) { tab = 0 }
             ActionButton("Series", Modifier.width(110.dp), accent = tab == 1) { tab = 1 }
-            Box(Modifier.weight(1f)) { LabeledField("Search Stremio", query) { query = it } }
             ActionButton("Manage", Modifier.width(110.dp)) { onManage() }
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(8.dp))
 
         when (state) {
             is StremioState.Idle, is StremioState.Loading -> Note("Loading your Stremio addons...")
@@ -157,12 +169,23 @@ private fun Browse(
             }
             is StremioState.Ready -> {
                 val rails = ArrayList<Rail>()
-                if (query.trim().length >= 2) {
-                    val hits = results?.filter { it.type == type }
-                    if (hits == null) {
-                        Note("Searching...")
-                    } else {
+                val hits = results?.filter { it.type == type }
+                if (searching) {
+                    if (hits != null) {
                         rails += Rail("Results for \"${query.trim()}\"", hits.map { tileFor(it, onOpen) })
+                    }
+                } else if (genre != null) {
+                    val g = genre!!
+                    val fromAddons = genreRows
+                    if (fromAddons != null) {
+                        rails += fromAddons.map { row -> Rail(row.title, row.items.map { tileFor(it, onOpen) }) }
+                        if (rails.isEmpty()) {
+                            // The addons couldn't filter by genre, so filter what's already on screen.
+                            val seen = HashSet<String>()
+                            val local = state.home.rows.filter { it.type == type }.flatMap { it.items }
+                                .filter { it.genres.any { x -> x.equals(g, true) } && seen.add(it.id) }
+                            if (local.isNotEmpty()) rails += Rail(g, local.map { tileFor(it, onOpen) })
+                        }
                     }
                 } else {
                     // Things you were part-way through, for this tab.
@@ -178,24 +201,62 @@ private fun Browse(
                         Rail(row.title, row.items.map { tileFor(it, onOpen) })
                     }
                 }
-                val note = if (state.home.failedAddons > 0) {
-                    "${state.home.failedAddons} addon(s) couldn't be reached."
-                } else {
-                    null
-                }
-                if (rails.isEmpty() && !(query.trim().length >= 2 && results == null)) {
-                    Note(if (query.trim().length >= 2) "Nothing found." else "Your addons have no ${if (tab == 0) "movie" else "series"} lists.")
-                } else {
-                    LazyColumn(
-                        Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(18.dp),
-                        contentPadding = PaddingValues(bottom = 40.dp),
-                    ) {
-                        if (note != null) {
-                            item { Text(note, fontSize = 14.sp, color = Palette.TextSecondary, modifier = Modifier.padding(horizontal = 36.dp)) }
-                        }
-                        itemsIndexed(rails, key = { i, r -> "$i|${r.title}" }) { _, rail -> RailRow(rail, 150.dp, 225.dp) }
+                val genreList: List<String> = run {
+                    val fromLists = state.home.addons.flatMap { a ->
+                        a.catalogs.filter { it.type == type && it.genreOnly }.flatMap { it.genreOptions }
                     }
+                    val all = fromLists.ifEmpty {
+                        state.home.rows.filter { it.type == type }.flatMap { it.items }.flatMap { it.genres }
+                    }
+                    all.distinctBy { it.lowercase() }.take(40)
+                }
+                val names = state.home.addons.joinToString(", ") { it.name }
+                val addonNote = "${state.home.addons.size} addon(s) loaded: $names" +
+                    if (state.home.failedAddons > 0) "  |  ${state.home.failedAddons} couldn't be reached" else ""
+
+                LazyColumn(
+                    Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    contentPadding = PaddingValues(bottom = 40.dp),
+                ) {
+                    item {
+                        Box(Modifier.fillMaxWidth().padding(horizontal = 36.dp)) {
+                            LabeledField("Search Stremio", query) { query = it }
+                        }
+                    }
+                    if (genreList.isNotEmpty() && !searching) {
+                        item {
+                            Row(
+                                Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 36.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                ActionButton("All", Modifier.width(80.dp), accent = genre == null) { genre = null }
+                                genreList.forEach { g ->
+                                    ActionButton(g, Modifier.width(150.dp), accent = genre.equals(g, true)) { genre = g }
+                                }
+                            }
+                        }
+                    }
+                    item { Text(addonNote, fontSize = 13.sp, color = Palette.TextSecondary, modifier = Modifier.padding(horizontal = 36.dp)) }
+                    if (searching && hits == null) {
+                        item { Note("Searching...") }
+                    } else if (!searching && genre != null && genreRows == null) {
+                        item { Note("Loading ${genre}...") }
+                    } else if (rails.isEmpty()) {
+                        item {
+                            Note(
+                                if (searching) {
+                                    "Nothing found."
+                                } else if (genre != null) {
+                                    "Nothing found for $genre. Try another genre."
+                                } else {
+                                    "None of your addons offer a plain list of ${if (tab == 0) "movies" else "series"}. " +
+                                        "Try the search box, or add Cinemeta in Stremio."
+                                }
+                            )
+                        }
+                    }
+                    itemsIndexed(rails, key = { i, r -> "$i|${r.title}" }) { _, rail -> RailRow(rail, 150.dp, 225.dp) }
                 }
             }
         }

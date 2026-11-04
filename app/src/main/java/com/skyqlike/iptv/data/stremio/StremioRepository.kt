@@ -156,12 +156,14 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
                 val id = str(c, "id") ?: continue
                 val supported = HashSet<String>()
                 val required = HashSet<String>()
+                var genres: List<String> = emptyList()
                 val extra = c.optJSONArray("extra")
                 if (extra != null) {
                     for (k in 0 until extra.length()) {
                         val e = extra.optJSONObject(k) ?: continue
                         val n = str(e, "name") ?: continue
                         supported += n
+                        if (n == "genre") genres = strList(e.optJSONArray("options"))
                         if (e.optBoolean("isRequired", false)) required += n
                     }
                 }
@@ -173,6 +175,8 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
                     name = str(c, "name") ?: id,
                     supportsSearch = "search" in supported && required.all { it == "search" },
                     needsExtra = required.isNotEmpty(),
+                    genreOptions = genres,
+                    genreOnly = required.all { it == "genre" },
                 )
             }
         }
@@ -223,6 +227,27 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
             if (isShown(item.type)) out += item
         }
         return out
+    }
+
+    /** Lists of movies or series narrowed to one genre, from every addon list that supports that genre. */
+    suspend fun byGenre(addons: List<StremioAddon>, type: String, genre: String): List<StremioRow> = withContext(Dispatchers.IO) {
+        val jobs = addons.flatMap { a ->
+            a.catalogs.filter { it.type == type && it.genreOnly && it.genreOptions.any { g -> g.equals(genre, true) } }.map { a to it }
+        }.take(8)
+        val fetched = coroutineScope {
+            jobs.map { (a, c) ->
+                async {
+                    val exact = c.genreOptions.first { it.equals(genre, true) }
+                    runCatching { fetchCatalog(a, c, "genre=" + enc(exact)) }.getOrDefault(emptyList())
+                }
+            }.awaitAll()
+        }
+        val titles = jobs.map { (_, c) -> "${c.name} - ${c.genreOptions.first { it.equals(genre, true) }}" }
+        val dup = titles.groupingBy { it }.eachCount()
+        jobs.mapIndexedNotNull { i, (a, _) ->
+            if (fetched[i].isEmpty()) null
+            else StremioRow(if ((dup[titles[i]] ?: 0) > 1) "${titles[i]} (${a.name})" else titles[i], type, fetched[i].take(40))
+        }
     }
 
     /** Searches every addon that offers search for movies or series. */

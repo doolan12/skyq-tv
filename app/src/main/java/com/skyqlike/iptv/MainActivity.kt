@@ -373,6 +373,10 @@ class MainActivity : ComponentActivity() {
                                         val addons = (stremioState as? StremioState.Ready)?.home?.addons ?: emptyList()
                                         stremioRepo.search(addons, query)
                                     },
+                                    byGenre = { type, genre ->
+                                        val addons = (stremioState as? StremioState.Ready)?.home?.addons ?: emptyList()
+                                        stremioRepo.byGenre(addons, type, genre)
+                                    },
                                     loadDetails = { title ->
                                         val addons = (stremioState as? StremioState.Ready)?.home?.addons ?: emptyList()
                                         stremioRepo.details(addons, title)

@@ -10,6 +10,10 @@ data class StremioCatalogDef(
     val supportsSearch: Boolean,
     /** True if the catalog can't be shown without choosing an extra option (like a genre). */
     val needsExtra: Boolean,
+    /** The genres this list can be narrowed to (empty if it can't be filtered by genre). */
+    val genreOptions: List<String> = emptyList(),
+    /** True if a genre is the only extra choice it needs, so it can be asked for with just a genre. */
+    val genreOnly: Boolean = false,
 )
 
 data class StremioAddon(
