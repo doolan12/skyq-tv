@@ -16,24 +16,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
-import com.skyqlike.iptv.ui.home.FocusTile
 import com.skyqlike.iptv.ui.theme.Palette
 
-/** One tile in a row: a channel, a movie, a series, or something you were watching. */
+/** One tile in a row: a movie, a series, or something you were watching. */
 data class HomeTile(
     val id: String,
     val title: String,
     val subtitle: String,
     val imageUrl: String?,
-    val fit: Boolean = false,
-    /** Hold OK on the remote (or press and hold on a touch screen). Used for adding favourites. */
+    /** Hold OK on the remote (or press and hold on a touch screen). Used for My List. */
     val onLongClick: (() -> Unit)? = null,
     /** 0 to 1: how far through it you are. Shows a thin bar along the bottom of the tile. */
     val progress: Float? = null,
@@ -41,26 +38,27 @@ data class HomeTile(
     val onClick: () -> Unit,
 )
 
-/** A titled row of tiles that scrolls sideways, like on Sky Q. */
+/** A titled row of tiles that scrolls sideways. */
 data class Rail(val title: String, val tiles: List<HomeTile>)
 
 @Composable
 fun RailRow(
     rail: Rail,
-    tileWidth: Dp = 250.dp,
-    tileHeight: Dp = 140.dp,
+    tileWidth: Dp = 150.dp,
+    tileHeight: Dp = 225.dp,
 ) {
     Column {
         Text(
             rail.title,
-            fontSize = 22.sp,
+            fontSize = 20.sp,
             fontWeight = FontWeight.SemiBold,
             color = Palette.TextPrimary,
-            modifier = Modifier.padding(start = 36.dp, bottom = 10.dp),
+            modifier = Modifier.padding(start = 48.dp, bottom = 2.dp),
         )
+        // The vertical padding leaves room for a tile to grow when the remote lands on it.
         LazyRow(
-            contentPadding = PaddingValues(horizontal = 36.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(horizontal = 48.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             itemsIndexed(rail.tiles, key = { i, t -> "$i|${rail.title}|${t.id}" }) { _, tile ->
                 PosterTile(tile, tileWidth, tileHeight)
@@ -76,21 +74,27 @@ fun PosterTile(tile: HomeTile, tileWidth: Dp, tileHeight: Dp) {
             onClick = tile.onClick,
             onLongClick = tile.onLongClick,
             modifier = Modifier.fillMaxWidth().height(tileHeight),
-            corner = 16.dp,
+            corner = 6.dp,
+            focusedScale = 1.1f,
         ) {
             Box(Modifier.fillMaxSize()) {
                 Artwork(
                     url = tile.imageUrl,
                     seed = tile.title,
                     modifier = Modifier.fillMaxSize(),
-                    contentScale = if (tile.fit) ContentScale.Fit else ContentScale.Crop,
                 )
                 val done = tile.progress
                 if (done != null && done > 0f) {
                     Box(
                         Modifier.align(Alignment.BottomStart)
+                            .fillMaxWidth()
+                            .height(4.dp)
+                            .background(Color(0x66FFFFFF))
+                    )
+                    Box(
+                        Modifier.align(Alignment.BottomStart)
                             .fillMaxWidth(done.coerceIn(0.03f, 1f))
-                            .height(5.dp)
+                            .height(4.dp)
                             .background(tile.progressColor)
                     )
                 }
@@ -98,20 +102,22 @@ fun PosterTile(tile: HomeTile, tileWidth: Dp, tileHeight: Dp) {
         }
         Text(
             tile.title,
-            fontSize = 16.sp,
+            fontSize = 15.sp,
             fontWeight = FontWeight.Medium,
             color = Palette.TextPrimary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 8.dp, start = 2.dp),
         )
-        Text(
-            tile.subtitle,
-            fontSize = 13.sp,
-            color = Palette.TextSecondary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(start = 2.dp),
-        )
+        if (tile.subtitle.isNotBlank()) {
+            Text(
+                tile.subtitle,
+                fontSize = 12.sp,
+                color = Palette.TextSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 2.dp),
+            )
+        }
     }
 }

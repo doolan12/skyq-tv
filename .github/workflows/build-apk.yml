@@ -20,10 +20,18 @@ jobs:
           gradle-version: 8.9
 
       - name: Build debug APK
-        run: gradle assembleDebug --no-daemon
+        run: |
+          set -o pipefail
+          gradle assembleDebug --no-daemon --console=plain 2>&1 | tee build.log
+
+      - name: Show build errors
+        if: failure()
+        run: |
+          grep -E '^e: ' build.log | sed 's#file:///home/runner/work/[^/]*/[^/]*/##' | head -9 | while IFS= read -r line; do echo "::error::${line}"; done || true
+          grep -E 'What went wrong' -A4 build.log | head -6 | tr '\n' ' ' | while IFS= read -r line; do echo "::error::${line}"; done || true
 
       - name: Save the APK
         uses: actions/upload-artifact@v4
         with:
-          name: skyq-iptv-apk
+          name: reelhouse-apk
           path: app/build/outputs/apk/debug/app-debug.apk

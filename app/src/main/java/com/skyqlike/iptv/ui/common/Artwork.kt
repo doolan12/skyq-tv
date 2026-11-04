@@ -12,7 +12,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
-import com.skyqlike.iptv.ui.home.tileBrush
 
 /**
  * A picture from the internet (poster, cover or logo).

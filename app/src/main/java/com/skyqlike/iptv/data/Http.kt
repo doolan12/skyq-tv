@@ -15,7 +15,7 @@ internal object Http {
         conn.connectTimeout = 15_000
         conn.readTimeout = readTimeoutMs
         conn.instanceFollowRedirects = true
-        conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) SkyQLikeIPTV/0.1")
+        conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) Reelhouse/1.0")
         try {
             val code = conn.responseCode
             if (code !in 200..299) throw IOException("HTTP $code")
@@ -33,7 +33,7 @@ internal object Http {
         conn.requestMethod = "POST"
         conn.doOutput = true
         conn.setRequestProperty("Content-Type", "application/json")
-        conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) SkyQLikeIPTV/0.1")
+        conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) Reelhouse/1.0")
         try {
             conn.outputStream.use { it.write(jsonBody.toByteArray(Charsets.UTF_8)) }
             val code = conn.responseCode
@@ -50,7 +50,7 @@ internal object Http {
         e.message?.contains("401") == true || e.message?.contains("403") == true ->
             "The server refused the login. Check the username and password."
         e.message?.contains("404") == true -> "Nothing found at that address."
-        e is JSONException -> "The server's reply wasn't what a normal IPTV login returns."
+        e is JSONException -> "The server's reply wasn't in the format expected."
         else -> e.message ?: "Something went wrong."
     }
 }

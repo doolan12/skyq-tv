@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "SkyQIptv"
+rootProject.name = "Reelhouse"
 include(":app")

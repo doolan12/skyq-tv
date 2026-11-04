@@ -20,13 +20,10 @@ data class HistoryEntry(
     val finished: Boolean,
 )
 
-/**
- * Remembers where the user got up to in movies and episodes (for Continue Watching),
- * and the live channels they watched most recently.
- */
-class WatchHistoryStore(context: Context) {
+/** Remembers where one profile got up to in movies and episodes (for Continue Watching). */
+class WatchHistoryStore(context: Context, profileId: String) {
 
-    private val prefs = context.getSharedPreferences("history", Context.MODE_PRIVATE)
+    private val prefs = context.getSharedPreferences("history_$profileId", Context.MODE_PRIVATE)
 
     fun entries(): List<HistoryEntry> {
         val text = prefs.getString("entries", null) ?: return emptyList()
@@ -95,31 +92,12 @@ class WatchHistoryStore(context: Context) {
         prefs.edit().putString("entries", arr.toString()).apply()
     }
 
-    fun recentChannels(): List<String> {
-        val text = prefs.getString("recent", null) ?: return emptyList()
-        return try {
-            val arr = JSONArray(text)
-            (0 until arr.length()).map { arr.getString(it) }
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
-
-    fun addRecentChannel(favKey: String) {
-        val list = recentChannels().filterNot { it == favKey }.toMutableList()
-        list.add(0, favKey)
-        val arr = JSONArray()
-        list.take(MAX_RECENT_CHANNELS).forEach { arr.put(it) }
-        prefs.edit().putString("recent", arr.toString()).apply()
-    }
-
-    /** Forgets everything watched (Continue Watching, Recently Watched). */
+    /** Forgets everything watched (Continue Watching). */
     fun clear() {
         prefs.edit().clear().apply()
     }
 
     private companion object {
         const val MAX_ENTRIES = 30
-        const val MAX_RECENT_CHANNELS = 10
     }
 }

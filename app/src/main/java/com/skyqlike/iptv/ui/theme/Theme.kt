@@ -5,18 +5,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.darkColorScheme
 
-/** The colours of the app. Dark charcoal and black with a blue accent. */
+/** The colours of the app: near-black with a red accent. */
 object Palette {
-    val Background = Color(0xFF0B0B0D)
-    val Panel = Color(0xFF15151A)
-    val Rail = Color(0xFF101014)
-    val Accent = Color(0xFF3D7BFF)
-    val TextPrimary = Color(0xFFF2F2F5)
-    val TextSecondary = Color(0xFFA0A0AB)
+    val Background = Color(0xFF141414)
+    val Panel = Color(0xFF1F1F1F)
+    val Accent = Color(0xFFE23744)
+    val TextPrimary = Color(0xFFF5F5F5)
+    val TextSecondary = Color(0xFFA8A8A8)
 }
 
 @Composable
-fun SkyTheme(content: @Composable () -> Unit) {
+fun ReelTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = darkColorScheme(
             primary = Palette.Accent,

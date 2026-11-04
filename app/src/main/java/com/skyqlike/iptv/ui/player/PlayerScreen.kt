@@ -67,14 +67,10 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Text
 import com.skyqlike.iptv.data.model.PlayItem
-import com.skyqlike.iptv.data.model.PlayKind
-import com.skyqlike.iptv.data.model.Programme
-import com.skyqlike.iptv.ui.home.FocusTile
+import com.skyqlike.iptv.ui.common.FocusTile
 import com.skyqlike.iptv.ui.theme.Palette
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
 
 private const val MAX_RETRIES = 5
@@ -89,20 +85,16 @@ private data class TrackOption(val label: String, val group: Tracks.Group, val i
 private data class PickerRow(val label: String, val selected: Boolean, val onPick: () -> Unit)
 
 /**
- * The full-screen TV player. Plays live channels, movies, episodes and catch-up shows.
- * Remote: Up/Down change channel (live only), Left/Right skip 10 seconds, OK shows the controls, Back leaves.
+ * The full-screen player for movies and episodes.
+ * Remote: Left/Right skip 10 seconds, OK or Up/Down show the controls, Back leaves.
  * Touch: tap the picture to show or hide the controls.
  */
 @Composable
 fun PlayerScreen(
     items: List<PlayItem>,
     startIndex: Int,
-    epg: Map<String, List<Programme>>,
-    favouriteKeys: Set<String>,
     startPositionFor: (PlayItem) -> Long,
-    onToggleFavourite: (PlayItem) -> Unit,
     onProgress: (PlayItem, Long, Long) -> Unit,
-    onChannelWatched: (PlayItem) -> Unit,
     onClose: () -> Unit,
     aspectDefault: Int = 0,
     autoReconnect: Boolean = true,
@@ -113,7 +105,6 @@ fun PlayerScreen(
     val scope = rememberCoroutineScope()
 
     var index by remember { mutableIntStateOf(startIndex.coerceIn(0, items.lastIndex)) }
-    var previousIndex by remember { mutableIntStateOf(-1) }
     var overlay by remember { mutableStateOf(true) }
     var overlayTick by remember { mutableIntStateOf(0) }
     var buffering by remember { mutableStateOf(true) }
@@ -124,20 +115,16 @@ fun PlayerScreen(
     var tracks by remember { mutableStateOf(Tracks.EMPTY) }
     var resizeIndex by remember { mutableIntStateOf(aspectDefault.coerceIn(0, ResizeModes.lastIndex)) }
     var picker by remember { mutableStateOf<Int?>(null) } // C.TRACK_TYPE_AUDIO or C.TRACK_TYPE_TEXT
-    var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
     var endedTick by remember { mutableIntStateOf(0) }
-    var digits by remember { mutableStateOf("") } // channel number being typed on the remote
-    var digitTick by remember { mutableIntStateOf(0) }
 
     val attempts = remember { intArrayOf(0) }
     val token = remember { intArrayOf(0) }
-    val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
 
     val exo = remember {
         val http = DefaultHttpDataSource.Factory()
-            .setUserAgent("Mozilla/5.0 (Linux; Android) SkyQLikeIPTV/0.1")
+            .setUserAgent("Mozilla/5.0 (Linux; Android) Reelhouse/1.0")
             .setAllowCrossProtocolRedirects(true)
             .setConnectTimeoutMs(15_000)
             .setReadTimeoutMs(15_000)
@@ -153,10 +140,9 @@ fun PlayerScreen(
             }
     }
 
-    // Remembers how far through a movie or episode we are, so it can be resumed later.
+    // Remembers how far through we are, so it can be resumed later.
     fun saveProgress(finished: Boolean = false) {
         val cur = items[index]
-        if (cur.kind != PlayKind.MOVIE && cur.kind != PlayKind.EPISODE) return
         val dur = exo.duration
         if (dur == C.TIME_UNSET || dur <= 0L) return
         onProgress(cur, if (finished) dur else exo.currentPosition, dur)
@@ -198,7 +184,6 @@ fun PlayerScreen(
                     scope.launch {
                         delay(2000L * n)
                         if (myToken == token[0]) {
-                            if (items[index].kind == PlayKind.LIVE) exo.seekToDefaultPosition()
                             exo.prepare()
                             exo.play()
                         }
@@ -244,20 +229,12 @@ fun PlayerScreen(
         positionMs = 0L
         durationMs = 0L
         val mediaItem = MediaItem.fromUri(cur.url)
-        val resumeAt = if (cur.kind == PlayKind.MOVIE || cur.kind == PlayKind.EPISODE) startPositionFor(cur) else 0L
+        val resumeAt = startPositionFor(cur)
         if (resumeAt > 0L) exo.setMediaItem(mediaItem, resumeAt) else exo.setMediaItem(mediaItem)
         exo.prepare()
         exo.play()
-        if (cur.kind == PlayKind.LIVE) onChannelWatched(cur)
         overlay = true
         overlayTick++
-    }
-
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(15_000)
-            nowMs = System.currentTimeMillis()
-        }
     }
 
     // Keeps the position bar moving, and saves progress every 10 seconds.
@@ -266,11 +243,9 @@ fun PlayerScreen(
         while (true) {
             delay(1000)
             ticks++
-            if (items[index].kind != PlayKind.LIVE) {
-                positionMs = exo.currentPosition
-                durationMs = exo.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0L
-                if (ticks % 10 == 0) saveProgress()
-            }
+            positionMs = exo.currentPosition
+            durationMs = exo.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0L
+            if (ticks % 10 == 0) saveProgress()
         }
     }
 
@@ -301,39 +276,9 @@ fun PlayerScreen(
     }
 
     val item = items[index]
-    val isLive = item.kind == PlayKind.LIVE
-    val listForChannel = if (isLive) item.epgId?.let { epg[it] } else null
-    val currentProg = listForChannel?.firstOrNull { nowMs >= it.start && nowMs < it.stop }
-    val nextProg = listForChannel?.firstOrNull { it.start >= (currentProg?.stop ?: nowMs) }
-    val isFavourite = item.favKey != null && item.favKey in favouriteKeys
 
     fun bump() {
         overlayTick++
-    }
-
-    fun step(delta: Int): Boolean {
-        if (items.size < 2) return false
-        return if (items[index].kind == PlayKind.LIVE) {
-            previousIndex = index
-            index = (index + delta + items.size) % items.size
-            true
-        } else {
-            val n = index + delta
-            if (n in items.indices) {
-                index = n
-                true
-            } else {
-                false
-            }
-        }
-    }
-
-    fun lastChannel() {
-        if (previousIndex >= 0 && previousIndex != index) {
-            val target = previousIndex
-            previousIndex = index
-            index = target
-        }
     }
 
     fun seekBy(ms: Long): Boolean {
@@ -346,56 +291,16 @@ fun PlayerScreen(
         if (exo.playWhenReady) exo.pause() else exo.play()
     }
 
-    // When a movie or episode ends: remember it as finished, then go on to the next episode if there is one.
+    // When it ends: remember it as finished and show the controls.
     LaunchedEffect(endedTick) {
         if (endedTick > 0) {
             saveProgress(finished = true)
-            val cur = items[index]
-            if (cur.kind == PlayKind.EPISODE && index < items.lastIndex) index++ else overlay = true
-        }
-    }
-
-    // Typing a channel number: 5 then 1 goes to channel 51. It jumps by itself after a moment, or at once on OK.
-    fun commitDigits() {
-        val n = digits.toIntOrNull()
-        digits = ""
-        if (n != null && n in 1..items.size && n - 1 != index && items[index].kind == PlayKind.LIVE) {
-            previousIndex = index
-            index = n - 1
-        }
-    }
-
-    LaunchedEffect(digitTick) {
-        if (digits.isNotEmpty()) {
-            delay(1800)
-            commitDigits()
+            overlay = true
         }
     }
 
     val handleKey: (KeyEvent) -> Boolean = handle@{ ev ->
         if (ev.type != KeyEventType.KeyDown) return@handle false
-        val typed = when (ev.key) {
-            Key.Zero, Key.NumPad0 -> '0'
-            Key.One, Key.NumPad1 -> '1'
-            Key.Two, Key.NumPad2 -> '2'
-            Key.Three, Key.NumPad3 -> '3'
-            Key.Four, Key.NumPad4 -> '4'
-            Key.Five, Key.NumPad5 -> '5'
-            Key.Six, Key.NumPad6 -> '6'
-            Key.Seven, Key.NumPad7 -> '7'
-            Key.Eight, Key.NumPad8 -> '8'
-            Key.Nine, Key.NumPad9 -> '9'
-            else -> null
-        }
-        if (typed != null && isLive && items.size > 1) {
-            if (digits.length < 4) digits += typed
-            digitTick++
-            return@handle true
-        }
-        if (digits.isNotEmpty() && (ev.key == Key.DirectionCenter || ev.key == Key.Enter || ev.key == Key.NumPadEnter)) {
-            commitDigits()
-            return@handle true
-        }
         bump()
         when (ev.key) {
             Key.MediaPlayPause -> { togglePlay(); return@handle true }
@@ -403,14 +308,11 @@ fun PlayerScreen(
             Key.MediaPause -> { exo.pause(); return@handle true }
             Key.MediaFastForward -> { seekBy(30_000); return@handle true }
             Key.MediaRewind -> { seekBy(-30_000); return@handle true }
-            Key.ChannelUp -> { return@handle step(1) }
-            Key.ChannelDown -> { return@handle step(-1) }
             else -> Unit
         }
         if (!overlay && picker == null) {
             when (ev.key) {
-                Key.DirectionUp -> if (isLive) step(1) else false
-                Key.DirectionDown -> if (isLive) step(-1) else false
+                Key.DirectionUp, Key.DirectionDown -> { overlay = true; true }
                 Key.DirectionLeft -> seekBy(-10_000)
                 Key.DirectionRight -> seekBy(10_000)
                 Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> { overlay = true; true }
@@ -454,21 +356,6 @@ fun PlayerScreen(
                 }
         )
 
-        // The channel number being typed, top right.
-        if (digits.isNotEmpty()) {
-            Text(
-                digits,
-                fontSize = 48.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(32.dp)
-                    .background(Color(0xAA000000), RoundedCornerShape(12.dp))
-                    .padding(horizontal = 20.dp, vertical = 8.dp),
-            )
-        }
-
         // Buffering / reconnecting / error message in the middle.
         if (buffering || statusMessage != null) {
             Column(
@@ -491,7 +378,6 @@ fun PlayerScreen(
                         failed = false
                         statusMessage = null
                         buffering = true
-                        if (isLive) exo.seekToDefaultPosition()
                         exo.prepare()
                         exo.play()
                     }
@@ -506,68 +392,32 @@ fun PlayerScreen(
                     .align(Alignment.BottomStart)
                     .fillMaxWidth()
                     .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xF2000000))))
-                    .padding(horizontal = 28.dp, vertical = 18.dp),
+                    .padding(horizontal = 40.dp, vertical = 22.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        if (isLive && items.size > 1) "${index + 1}  ${item.title}" else item.title,
-                        fontSize = 26.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Palette.TextPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    if (isLive) {
-                        Text(
-                            "LIVE",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            modifier = Modifier
-                                .background(Color(0xFFD32F2F), RoundedCornerShape(4.dp))
-                                .padding(horizontal = 8.dp, vertical = 2.dp),
-                        )
-                    }
-                }
-                if (!isLive && item.subtitle.isNotBlank()) {
+                Text(
+                    item.title,
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Palette.TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (item.subtitle.isNotBlank()) {
                     Text(item.subtitle, fontSize = 16.sp, color = Palette.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                if (currentProg != null) {
-                    Text(
-                        "Now: ${currentProg.title}  (${timeFormat.format(Date(currentProg.start))} - ${timeFormat.format(Date(currentProg.stop))})",
-                        fontSize = 16.sp,
-                        color = Palette.TextPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    val frac = ((nowMs - currentProg.start).toFloat() / (currentProg.stop - currentProg.start)).coerceIn(0f, 1f)
-                    Box(Modifier.fillMaxWidth().height(4.dp).background(Color(0x33FFFFFF))) {
-                        Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(Palette.Accent))
-                    }
-                } else if (isLive) {
-                    Text("No programme information", fontSize = 15.sp, color = Palette.TextSecondary)
-                }
-                if (nextProg != null) {
-                    Text(
-                        "Next: ${nextProg.title}  at ${timeFormat.format(Date(nextProg.start))}",
-                        fontSize = 15.sp,
-                        color = Palette.TextSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                // Movies, episodes and catch-up: how far through, like a progress bar.
-                if (!isLive && durationMs > 0L) {
-                    Text(
-                        "${formatTime(positionMs)} / ${formatTime(durationMs)}",
-                        fontSize = 15.sp,
-                        color = Palette.TextPrimary,
-                    )
+                // How far through, like a progress bar.
+                if (durationMs > 0L) {
                     val frac = (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
-                    Box(Modifier.fillMaxWidth().height(4.dp).background(Color(0x33FFFFFF))) {
-                        Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(Palette.Accent))
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Box(Modifier.weight(1f).height(5.dp).background(Color(0x44FFFFFF))) {
+                            Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(Palette.Accent))
+                        }
+                        Text(
+                            "${formatTime(positionMs)} / ${formatTime(durationMs)}",
+                            fontSize = 15.sp,
+                            color = Palette.TextPrimary,
+                        )
                     }
                 }
 
@@ -584,26 +434,9 @@ fun PlayerScreen(
                         PlayerButton("-10s", Modifier.width(80.dp)) { bump(); seekBy(-10_000) }
                         PlayerButton("+10s", Modifier.width(80.dp)) { bump(); seekBy(10_000) }
                     }
-                    if (isLive && items.size > 1) {
-                        PlayerButton("Prev ch", Modifier.width(110.dp)) { step(-1) }
-                        PlayerButton("Next ch", Modifier.width(110.dp)) { step(1) }
-                        if (previousIndex >= 0 && previousIndex != index) {
-                            PlayerButton("Last ch", Modifier.width(110.dp)) { lastChannel() }
-                        }
-                    }
-                    if (item.kind == PlayKind.EPISODE) {
-                        if (index > 0) PlayerButton("Prev ep", Modifier.width(110.dp)) { step(-1) }
-                        if (index < items.lastIndex) PlayerButton("Next ep", Modifier.width(110.dp)) { step(1) }
-                    }
-                    if (item.favKey != null) {
-                        PlayerButton(
-                            if (isFavourite) "Remove fav" else "Add fav",
-                            Modifier.width(130.dp),
-                        ) { bump(); onToggleFavourite(item) }
-                    }
                     PlayerButton("Audio", Modifier.width(100.dp)) { picker = C.TRACK_TYPE_AUDIO }
                     PlayerButton("Subtitles", Modifier.width(120.dp)) { picker = C.TRACK_TYPE_TEXT }
-                    PlayerButton("Aspect: ${ResizeLabels[resizeIndex]}", Modifier.width(160.dp)) {
+                    PlayerButton("Size: ${ResizeLabels[resizeIndex]}", Modifier.width(150.dp)) {
                         bump()
                         resizeIndex = (resizeIndex + 1) % ResizeModes.size
                     }

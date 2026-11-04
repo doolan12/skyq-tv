@@ -9,11 +9,11 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.skyqlike.iptv"
+        applicationId = "com.doolan.reelhouse"
         minSdk = 22          // covers older Fire TV sticks and Android TV boxes
         targetSdk = 34
-        versionCode = 13
-        versionName = "1.2.0"
+        versionCode = 20
+        versionName = "2.0.0"
     }
 
     buildTypes {

@@ -4,10 +4,10 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Remembers the Stremio movies and series the user has marked as favourites. */
-class StremioFavouritesStore(context: Context) {
+/** Remembers the movies and series one profile has added to My List. */
+class StremioFavouritesStore(context: Context, profileId: String) {
 
-    private val prefs = context.getSharedPreferences("stremio_favourites", Context.MODE_PRIVATE)
+    private val prefs = context.getSharedPreferences("mylist_$profileId", Context.MODE_PRIVATE)
 
     /** Newest first. */
     fun all(): List<StremioItem> {
