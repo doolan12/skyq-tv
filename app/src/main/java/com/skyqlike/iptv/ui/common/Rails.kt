@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -16,6 +17,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -62,6 +65,64 @@ fun RailRow(
         ) {
             itemsIndexed(rail.tiles, key = { i, t -> "$i|${rail.title}|${t.id}" }) { _, tile ->
                 PosterTile(tile, tileWidth, tileHeight)
+            }
+        }
+    }
+}
+
+/**
+ * The "Top 10" row: a huge outlined number sits beside each poster, like Netflix.
+ * Only the first ten tiles are shown.
+ */
+@Composable
+fun Top10Row(
+    title: String,
+    tiles: List<HomeTile>,
+    tileWidth: Dp = 130.dp,
+    tileHeight: Dp = 195.dp,
+) {
+    Column {
+        Text(
+            title,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Palette.TextPrimary,
+            modifier = Modifier.padding(start = 48.dp, bottom = 2.dp),
+        )
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 48.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            itemsIndexed(tiles.take(10), key = { i, t -> "top10|$i|${t.id}" }) { i, tile ->
+                val rank = i + 1
+                Row(verticalAlignment = Alignment.Bottom) {
+                    // "10" has two digits, so it needs a wider space than 1 to 9.
+                    Box(
+                        Modifier.width(if (rank == 10) 128.dp else 74.dp).height(tileHeight),
+                        contentAlignment = Alignment.BottomEnd,
+                    ) {
+                        Text(
+                            rank.toString(),
+                            style = TextStyle(
+                                fontSize = 120.sp,
+                                fontWeight = FontWeight.Black,
+                                color = Color(0xFF9A9A9A),
+                                drawStyle = Stroke(width = 5f),
+                            ),
+                        )
+                    }
+                    Box(Modifier.width(tileWidth).height(tileHeight)) {
+                        FocusTile(
+                            onClick = tile.onClick,
+                            onLongClick = tile.onLongClick,
+                            modifier = Modifier.fillMaxSize(),
+                            corner = 6.dp,
+                            focusedScale = 1.1f,
+                        ) {
+                            Artwork(url = tile.imageUrl, seed = tile.title, modifier = Modifier.fillMaxSize())
+                        }
+                    }
+                }
             }
         }
     }

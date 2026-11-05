@@ -44,6 +44,7 @@ import com.skyqlike.iptv.data.stremio.StremioVideo
 import com.skyqlike.iptv.ui.common.ActionButton
 import com.skyqlike.iptv.ui.common.Artwork
 import com.skyqlike.iptv.ui.common.FocusTile
+import com.skyqlike.iptv.ui.common.MetaLine
 import com.skyqlike.iptv.ui.stremio.StremioActions
 import com.skyqlike.iptv.ui.trailer.TrailerPlayer
 import com.skyqlike.iptv.ui.theme.Palette
@@ -85,8 +86,7 @@ fun DetailScreen(
     val playFocus = remember { FocusRequester() }
     LaunchedEffect(start.id, showTrailer) { if (!showTrailer) runCatching { playFocus.requestFocus() } }
 
-    val meta = listOf(info.year, info.genres.take(3).joinToString(", "), info.runtime, if (info.rating.isNotBlank()) "IMDb ${info.rating}" else "")
-        .filter { it.isNotBlank() }.joinToString("   |   ")
+    val genreLine = info.genres.take(3).joinToString("  •  ")
     val listLabel = if (isFavourite) "✓ In My List" else "+ My List"
 
     Box(Modifier.fillMaxSize()) {
@@ -114,7 +114,8 @@ fun DetailScreen(
                 item {
                     Column(Modifier.fillMaxWidth(0.58f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(info.name, fontSize = 42.sp, fontWeight = FontWeight.ExtraBold, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        if (meta.isNotBlank()) Text(meta, fontSize = 15.sp, color = Color(0xFFD0D0D8))
+                        MetaLine(info.year, info.runtime, info.rating, fontSize = 15.sp)
+                        if (genreLine.isNotBlank()) Text(genreLine, fontSize = 15.sp, color = Color(0xFFD0D0D8))
                         Text(
                             info.description.ifBlank { "No description." },
                             fontSize = 15.sp,
@@ -186,7 +187,8 @@ fun DetailScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(info.name, fontSize = 44.sp, fontWeight = FontWeight.ExtraBold, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                if (meta.isNotBlank()) Text(meta, fontSize = 16.sp, color = Color(0xFFD0D0D8))
+                MetaLine(info.year, info.runtime, info.rating, fontSize = 16.sp)
+                if (genreLine.isNotBlank()) Text(genreLine, fontSize = 16.sp, color = Color(0xFFD0D0D8))
                 Text(
                     info.description.ifBlank { "No description." },
                     fontSize = 17.sp,

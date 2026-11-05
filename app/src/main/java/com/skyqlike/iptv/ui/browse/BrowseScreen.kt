@@ -50,8 +50,10 @@ import com.skyqlike.iptv.ui.common.Artwork
 import com.skyqlike.iptv.ui.common.FocusTile
 import com.skyqlike.iptv.ui.common.HomeTile
 import com.skyqlike.iptv.ui.common.LabeledField
+import com.skyqlike.iptv.ui.common.MetaLine
 import com.skyqlike.iptv.ui.common.Rail
 import com.skyqlike.iptv.ui.common.RailRow
+import com.skyqlike.iptv.ui.common.Top10Row
 import com.skyqlike.iptv.ui.profiles.ProfileAvatar
 import com.skyqlike.iptv.ui.stremio.StremioActions
 import com.skyqlike.iptv.ui.theme.Palette
@@ -77,7 +79,7 @@ private const val TAB_SEARCH = 4
 private val TabNames = listOf("Home", "Series", "Movies", "My List", "Search")
 
 /** A row on the page, with the size its tiles are drawn at. */
-private class RailSpec(val rail: Rail, val width: Dp, val height: Dp)
+private class RailSpec(val rail: Rail, val width: Dp, val height: Dp, val top10: Boolean = false)
 
 @Composable
 fun BrowseScreen(
@@ -186,6 +188,19 @@ fun BrowseScreen(
                 if (items.isNotEmpty()) rails += RailSpec(Rail(title, items.map { tileFor(it, onOpen, toggle) }), w, h)
             }
 
+            // The first list your addons give for movies (or series), which is normally "Popular".
+            // It becomes the Top 10 row, and is left out of the normal rows so it doesn't show twice.
+            val usedForTop10 = ArrayList<StremioRow>()
+            fun notTop10(r: StremioRow) = usedForTop10.none { it === r }
+
+            fun addTop10(title: String, rowType: String) {
+                val first = state.home.rows.firstOrNull { it.type == rowType } ?: return
+                val items = first.items.filter { !it.poster.isNullOrBlank() }.take(10)
+                if (items.size < 5) return
+                usedForTop10 += first
+                rails += RailSpec(Rail(title, items.map { tileFor(it, onOpen, toggle) }), 130.dp, 195.dp, top10 = true)
+            }
+
             fun addContinue(filterType: String?) {
                 val cont = continueEntries.mapNotNull { e -> entryToItem(e)?.let { e to it } }
                     .filter { filterType == null || it.second.type == filterType }
@@ -235,8 +250,10 @@ fun BrowseScreen(
                 }
                 tab == TAB_HOME -> {
                     addContinue(null)
-                    val movieRows = state.home.rows.filter { it.type == "movie" }
-                    val seriesRows = state.home.rows.filter { it.type == "series" }
+                    addTop10("Top 10 Series", "series")
+                    addTop10("Top 10 Movies", "movie")
+                    val movieRows = state.home.rows.filter { it.type == "movie" && notTop10(it) }
+                    val seriesRows = state.home.rows.filter { it.type == "series" && notTop10(it) }
                     // Series and movie rows take turns, so Home has a bit of everything.
                     for (i in 0 until maxOf(movieRows.size, seriesRows.size)) {
                         seriesRows.getOrNull(i)?.let { add(it.title, it.items) }
@@ -245,7 +262,9 @@ fun BrowseScreen(
                 }
                 else -> {
                     addContinue(type)
-                    state.home.rows.filter { it.type == type }.forEach { row: StremioRow -> add(row.title, row.items) }
+                    if (type == "series") addTop10("Top 10 Series", "series")
+                    if (type == "movie") addTop10("Top 10 Movies", "movie")
+                    state.home.rows.filter { it.type == type && notTop10(it) }.forEach { row: StremioRow -> add(row.title, row.items) }
                 }
             }
 
@@ -323,7 +342,10 @@ fun BrowseScreen(
                         )
                     }
                 }
-                itemsIndexed(rails, key = { i, r -> "$i|${r.rail.title}" }) { _, spec -> RailRow(spec.rail, spec.width, spec.height) }
+                itemsIndexed(rails, key = { i, r -> "$i|${r.rail.title}" }) { _, spec ->
+                    if (spec.top10) Top10Row(spec.rail.title, spec.rail.tiles, spec.width, spec.height)
+                    else RailRow(spec.rail, spec.width, spec.height)
+                }
                 item {
                     Text(
                         addonNote,
@@ -451,9 +473,10 @@ private fun Billboard(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            val meta = listOf(item.year, item.genres.take(3).joinToString(", "), if (item.rating.isNotBlank()) "IMDb ${item.rating}" else "")
-                .filter { it.isNotBlank() }.joinToString("   |   ")
-            if (meta.isNotBlank()) Text(meta, fontSize = 14.sp, color = Color(0xFFD0D0D8))
+            MetaLine(item.year, "", item.rating, fontSize = 14.sp)
+            if (item.genres.isNotEmpty()) {
+                Text(item.genres.take(3).joinToString("  •  "), fontSize = 14.sp, color = Color(0xFFD0D0D8))
+            }
             if (item.description.isNotBlank()) {
                 Text(item.description, fontSize = 14.sp, color = Color(0xFFC0C0C8), maxLines = 3, overflow = TextOverflow.Ellipsis)
             }
