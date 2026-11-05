@@ -13,6 +13,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.horizontalScroll
@@ -389,7 +390,17 @@ fun PlayerScreen(
         segments = emptyList()
         if (skipIntroOn) segments = introRepo.segmentsFor(playlist[index].externalId)
     }
-    val activeSkip = segments.firstOrNull { positionMs >= it.startMs - 1_000 && positionMs < it.endMs - 1_000 }
+    val activeSkip0 = segments.firstOrNull { positionMs >= it.startMs - 1_000 && positionMs < it.endMs - 1_000 }
+    // The Skip button only stays for 10 seconds, then goes away until the next intro or recap.
+    var hiddenSkipStart by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(activeSkip0?.startMs) {
+        if (activeSkip0 != null) {
+            delay(10_000)
+            hiddenSkipStart = activeSkip0.startMs
+        }
+    }
+    val activeSkip = activeSkip0?.takeIf { hiddenSkipStart != it.startMs }
+    var scrubFrac by remember { mutableStateOf<Float?>(null) }
 
     val rootFocus = remember { FocusRequester() }
     val firstButtonFocus = remember { FocusRequester() }
@@ -509,7 +520,7 @@ fun PlayerScreen(
         }
         if (!overlay && picker == null) {
             // With the Skip button showing and the controls hidden, OK skips.
-            val skip = segments.firstOrNull { positionMs >= it.startMs - 1_000 && positionMs < it.endMs - 1_000 }
+            val skip = activeSkip
             if (skip != null && (ev.key == Key.DirectionCenter || ev.key == Key.Enter || ev.key == Key.NumPadEnter)) {
                 exo.seekTo(skip.endMs)
                 positionMs = skip.endMs
@@ -565,6 +576,31 @@ fun PlayerScreen(
                                 o.x < w * 0.4f -> if (seekBy(-10_000)) showHud("-10s")
                                 o.x > w * 0.6f -> if (seekBy(10_000)) showHud("+10s")
                                 else -> togglePlay()
+                            }
+                        },
+                    )
+                }
+                // Swipe left or right across the picture to wind the video back or forward (a full swipe is about 3 minutes).
+                .pointerInput(Unit) {
+                    var start = 0L
+                    var target = 0L
+                    detectHorizontalDragGestures(
+                        onDragStart = {
+                            start = exo.currentPosition
+                            target = start
+                        },
+                        onHorizontalDrag = { change, dx ->
+                            change.consume()
+                            if (exo.isCurrentMediaItemSeekable) {
+                                val top = if (exo.duration > 0L) exo.duration else Long.MAX_VALUE
+                                target = (target + (dx / size.width * 180_000f).toLong()).coerceIn(0L, top)
+                                showHud((if (target >= start) "+" else "-") + formatTime(kotlin.math.abs(target - start)))
+                            }
+                        },
+                        onDragEnd = {
+                            if (exo.isCurrentMediaItemSeekable) {
+                                exo.seekTo(target)
+                                positionMs = target
                             }
                         },
                     )
@@ -716,13 +752,52 @@ fun PlayerScreen(
                 }
                 // How far through, like a progress bar.
                 if (durationMs > 0L) {
-                    val frac = (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
+                    val frac = scrubFrac ?: (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
+                    val shownMs = if (scrubFrac != null) (frac * durationMs).toLong() else positionMs
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Box(Modifier.weight(1f).height(5.dp).background(Color(0x44FFFFFF))) {
-                            Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(Palette.Accent))
+                        // Touch the bar to jump there, or drag along it to scrub through the video.
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .height(36.dp)
+                                .pointerInput(durationMs, seekable) {
+                                    detectTapGestures { o ->
+                                        if (seekable) {
+                                            val f = (o.x / size.width).coerceIn(0f, 1f)
+                                            exo.seekTo((f * durationMs).toLong())
+                                            positionMs = (f * durationMs).toLong()
+                                            overlayTick++
+                                        }
+                                    }
+                                }
+                                .pointerInput(durationMs, seekable) {
+                                    detectHorizontalDragGestures(
+                                        onDragStart = { o -> if (seekable) scrubFrac = (o.x / size.width).coerceIn(0f, 1f) },
+                                        onHorizontalDrag = { change, _ ->
+                                            change.consume()
+                                            if (seekable) {
+                                                scrubFrac = (change.position.x / size.width).coerceIn(0f, 1f)
+                                                overlayTick++
+                                            }
+                                        },
+                                        onDragEnd = {
+                                            scrubFrac?.let {
+                                                exo.seekTo((it * durationMs).toLong())
+                                                positionMs = (it * durationMs).toLong()
+                                            }
+                                            scrubFrac = null
+                                        },
+                                        onDragCancel = { scrubFrac = null },
+                                    )
+                                },
+                            contentAlignment = Alignment.CenterStart,
+                        ) {
+                            Box(Modifier.fillMaxWidth().height(if (scrubFrac != null) 9.dp else 5.dp).background(Color(0x44FFFFFF))) {
+                                Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(Palette.Accent))
+                            }
                         }
                         Text(
-                            "${formatTime(positionMs)} / ${formatTime(durationMs)}",
+                            "${formatTime(shownMs)} / ${formatTime(durationMs)}",
                             fontSize = 15.sp,
                             color = Palette.TextPrimary,
                         )
@@ -739,8 +814,10 @@ fun PlayerScreen(
                         accent = true,
                     ) { bump(); togglePlay() }
                     if (seekable) {
+                        PlayerButton("-1m", Modifier.width(80.dp)) { bump(); seekBy(-60_000) }
                         PlayerButton("-10s", Modifier.width(80.dp)) { bump(); seekBy(-10_000) }
                         PlayerButton("+10s", Modifier.width(80.dp)) { bump(); seekBy(10_000) }
+                        PlayerButton("+1m", Modifier.width(80.dp)) { bump(); seekBy(60_000) }
                     }
                     PlayerButton("Audio", Modifier.width(100.dp)) { picker = C.TRACK_TYPE_AUDIO }
                     PlayerButton("Subtitles", Modifier.width(120.dp)) { picker = C.TRACK_TYPE_TEXT }
