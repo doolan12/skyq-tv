@@ -17,6 +17,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -574,13 +577,46 @@ fun BrowseScreen(
             val listBody: androidx.compose.foundation.lazy.LazyListScope.() -> Unit = {
                 if (genreList.isNotEmpty()) {
                     item {
-                        Row(
-                            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 48.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            ActionButton("All", Modifier.width(80.dp), accent = ui.genre == null) { ui.genre = null }
-                            genreList.forEach { g ->
-                                ActionButton(g, Modifier.width(150.dp), accent = ui.genre.equals(g, true)) { ui.genre = g }
+                        // One button that opens a menu of categories, instead of a long row of them.
+                        var menuOpen by remember { mutableStateOf(false) }
+                        Row(Modifier.padding(horizontal = 48.dp, vertical = 6.dp)) {
+                            ActionButton("Category: ${ui.genre ?: "All"}  \u25BE", Modifier.widthIn(min = 220.dp, max = 360.dp), accent = ui.genre != null) { menuOpen = true }
+                        }
+                        if (menuOpen) {
+                            val firstItem = remember { FocusRequester() }
+                            LaunchedEffect(Unit) {
+                                delay(150)
+                                runCatching { firstItem.requestFocus() }
+                            }
+                            androidx.compose.ui.window.Dialog(
+                                onDismissRequest = { menuOpen = false },
+                                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+                            ) {
+                                Column(
+                                    Modifier
+                                        .width(340.dp)
+                                        .fillMaxHeight(0.9f)
+                                        .background(Color(0xF2181820), RoundedCornerShape(14.dp))
+                                        .padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text("Choose a category", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+                                    LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        item {
+                                            ActionButton("All", Modifier.fillMaxWidth().focusRequester(firstItem), accent = ui.genre == null) {
+                                                ui.genre = null
+                                                menuOpen = false
+                                            }
+                                        }
+                                        items(genreList.size) { i ->
+                                            val g = genreList[i]
+                                            ActionButton(g, Modifier.fillMaxWidth(), accent = ui.genre.equals(g, true)) {
+                                                ui.genre = g
+                                                menuOpen = false
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
