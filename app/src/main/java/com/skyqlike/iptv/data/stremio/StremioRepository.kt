@@ -97,15 +97,19 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
     }
 
     /** Everything for the Stremio home page: your addons, and a row of titles for each of their lists. */
-    suspend fun loadHome(session: StremioSession): Result<StremioHome> = withContext(Dispatchers.IO) {
+    suspend fun loadHome(session: StremioSession, cacheOnly: Boolean = false): Result<StremioHome> = withContext(Dispatchers.IO) {
         try {
             val urls = LinkedHashSet<String>()
-            if (session.signedIn) {
+            if (cacheOnly) {
+                // Instant start: rebuild Home from the copies saved last time, without touching the network.
+                Http.readCache(HOME_URLS_KEY)?.lines()?.filter { it.isNotBlank() }?.let { urls.addAll(it) }
+                if (urls.isEmpty()) return@withContext Result.failure(Exception("Nothing saved yet."))
+            } else if (session.signedIn) {
                 accountAddonUrls(session.authKey)
                     .onSuccess { list -> list.forEach { urls.add(normalizeManifestUrl(it)) } }
                     .onFailure { if (session.manualAddons.isEmpty()) return@withContext Result.failure(it) }
             }
-            session.manualAddons.forEach { urls.add(normalizeManifestUrl(it)) }
+            if (!cacheOnly) session.manualAddons.forEach { urls.add(normalizeManifestUrl(it)) }
             // Stremio's own "local files" addon lives inside the Stremio app on your computer, so it can't be reached from here.
             val reachable = urls.filterNot { "127.0.0.1:11470" in it || "localhost:11470" in it }
             if (reachable.isEmpty()) {
@@ -113,20 +117,23 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
             }
 
             val loaded = coroutineScope {
-                reachable.map { u -> async { runCatching { loadAddon(u) } } }.awaitAll()
+                reachable.map { u -> async { runCatching { loadAddon(u, cacheOnly) } } }.awaitAll()
             }
             val addons = loaded.mapNotNull { it.getOrNull() }
             if (addons.isEmpty()) {
                 return@withContext Result.failure(Exception("Couldn't reach any of your addons. Check your internet connection."))
             }
-            Result.success(StremioHome(addons, loadRows(addons), loaded.size - addons.size))
+            val rows = loadRows(addons, cacheOnly)
+            if (cacheOnly && rows.isEmpty()) return@withContext Result.failure(Exception("Nothing saved yet."))
+            if (!cacheOnly) Http.writeCache(HOME_URLS_KEY, reachable.joinToString("\n"))
+            Result.success(StremioHome(addons, rows, loaded.size - addons.size))
         } catch (e: Exception) {
             Result.failure(Exception(Http.friendly(e)))
         }
     }
 
-    private fun loadAddon(manifestUrl: String): StremioAddon {
-        val o = JSONObject(Http.get(manifestUrl, 20_000))
+    private fun loadAddon(manifestUrl: String, cacheOnly: Boolean = false): StremioAddon {
+        val o = JSONObject(Http.getCached(manifestUrl, 10_000, 8_000, cacheOnly))
         val types = strList(o.optJSONArray("types"))
         val prefixes = strList(o.optJSONArray("idPrefixes"))
 
@@ -193,7 +200,7 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
 
     // ------------------------------------------------------------------ browsing
 
-    private suspend fun loadRows(addons: List<StremioAddon>): List<StremioRow> = coroutineScope {
+    private suspend fun loadRows(addons: List<StremioAddon>, cacheOnly: Boolean = false): List<StremioRow> = coroutineScope {
         val jobs = addons.flatMap { a ->
             a.catalogs
                 .filter { isShown(it.type) && !it.needsExtra }
@@ -201,7 +208,7 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
                 .map { a to it }
         }
         val fetched = jobs.map { (a, c) ->
-            async { runCatching { fetchCatalog(a, c, null) }.getOrDefault(emptyList()) }
+            async { runCatching { fetchCatalog(a, c, null, cacheOnly, fast = true) }.getOrDefault(emptyList()) }
         }.awaitAll()
 
         val rows = ArrayList<Triple<StremioAddon, StremioCatalogDef, List<StremioItem>>>()
@@ -217,10 +224,18 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
 
     private fun isShown(type: String) = type == "movie" || type == "series"
 
-    private fun fetchCatalog(addon: StremioAddon, cat: StremioCatalogDef, extra: String?): List<StremioItem> {
+    private fun fetchCatalog(
+        addon: StremioAddon,
+        cat: StremioCatalogDef,
+        extra: String?,
+        cacheOnly: Boolean = false,
+        fast: Boolean = false,
+    ): List<StremioItem> {
         val tail = if (extra == null) "" else "/$extra"
         val url = "${addon.baseUrl}/catalog/${enc(cat.type)}/${enc(cat.id)}$tail.json"
-        val metas = JSONObject(Http.get(url, 20_000)).optJSONArray("metas") ?: return emptyList()
+        // Home rows give up on a slow addon sooner, and keep a saved copy for next time.
+        val text = if (fast || cacheOnly) Http.getCached(url, 12_000, 6_000, cacheOnly) else Http.get(url, 20_000)
+        val metas = JSONObject(text).optJSONArray("metas") ?: return emptyList()
         val out = ArrayList<StremioItem>()
         for (i in 0 until metas.length()) {
             val m = metas.optJSONObject(i) ?: continue
@@ -530,6 +545,8 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
         }
 
         fun baseOf(manifestUrl: String): String = manifestUrl.substringBefore("/manifest.json").trimEnd('/')
+
+        private const val HOME_URLS_KEY = "home-addon-urls"
 
         private fun enc(s: String): String = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
 

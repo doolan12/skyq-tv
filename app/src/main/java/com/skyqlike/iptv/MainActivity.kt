@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import com.skyqlike.iptv.data.history.WatchHistoryStore
+import com.skyqlike.iptv.data.Http
 import com.skyqlike.iptv.data.model.PlayItem
 import com.skyqlike.iptv.data.model.PlayKind
 import com.skyqlike.iptv.data.profile.Profile
@@ -50,6 +51,7 @@ import com.skyqlike.iptv.ui.stremio.AccountPage
 import com.skyqlike.iptv.ui.stremio.StremioActions
 import com.skyqlike.iptv.ui.theme.Palette
 import com.skyqlike.iptv.ui.theme.ReelTheme
+import java.io.File
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -102,6 +104,9 @@ private fun ReelApp(context: Context) {
     var playRequest by remember { mutableStateOf<PlayRequest?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
     var trending by remember { mutableStateOf<Trending?>(null) }
+    // Saved copies of addon pages, so Home can appear instantly next time.
+    remember(context) { Http.cacheDir = File(context.cacheDir, "http"); true }
+    val loadGen = remember { intArrayOf(0) }
 
     // Each profile has its own Continue Watching and My List.
     val current = profile
@@ -126,9 +131,13 @@ private fun ReelApp(context: Context) {
         trending = null
         val key = settings.tmdbKey.trim()
         if (key.isNotBlank()) {
+            // Last time's trending row first (instant), then today's.
+            tmdbRepo.trending(key, cacheOnly = true).getOrNull()?.let {
+                if (it.movies.size >= 5 || it.series.size >= 5) trending = it
+            }
             tmdbRepo.trending(key).fold(
                 onSuccess = { trending = it },
-                onFailure = { note = it.message ?: "Couldn't load trending titles." },
+                onFailure = { if (trending == null) note = it.message ?: "Couldn't load trending titles." },
             )
         }
     }
@@ -136,10 +145,19 @@ private fun ReelApp(context: Context) {
     val loadAddons: () -> Unit = {
         if (stremioState is StremioState.Idle || stremioState is StremioState.Error) {
             stremioState = StremioState.Loading
+            val gen = ++loadGen[0]
             scope.launch {
-                stremioState = stremioRepo.loadHome(stremio).fold(
+                // Show last time's Home straight away, then refresh it in the background.
+                val saved = stremioRepo.loadHome(stremio, cacheOnly = true).getOrNull()
+                if (saved != null && gen == loadGen[0]) stremioState = StremioState.Ready(saved)
+                val fresh = stremioRepo.loadHome(stremio)
+                if (gen != loadGen[0]) return@launch
+                stremioState = fresh.fold(
                     onSuccess = { StremioState.Ready(it) },
-                    onFailure = { StremioState.Error(it.message ?: "Couldn't load your addons.") },
+                    onFailure = {
+                        if (saved != null) StremioState.Ready(saved)
+                        else StremioState.Error(it.message ?: "Couldn't load your addons.")
+                    },
                 )
             }
         }

@@ -22,11 +22,11 @@ data class Trending(val movies: List<StremioItem>, val series: List<StremioItem>
  */
 class TmdbRepository {
 
-    suspend fun trending(apiKey: String): Result<Trending> = withContext(Dispatchers.IO) {
+    suspend fun trending(apiKey: String, cacheOnly: Boolean = false): Result<Trending> = withContext(Dispatchers.IO) {
         try {
             val (movies, series) = coroutineScope {
-                val m = async { load(apiKey, "movie") }
-                val s = async { load(apiKey, "tv") }
+                val m = async { load(apiKey, "movie", cacheOnly) }
+                val s = async { load(apiKey, "tv", cacheOnly) }
                 m.await() to s.await()
             }
             Result.success(Trending(movies, series))
@@ -35,9 +35,9 @@ class TmdbRepository {
         }
     }
 
-    private suspend fun load(apiKey: String, kind: String): List<StremioItem> = coroutineScope {
+    private suspend fun load(apiKey: String, kind: String, cacheOnly: Boolean): List<StremioItem> = coroutineScope {
         val url = "$BASE/trending/$kind/day?api_key=${enc(apiKey)}&language=en-US"
-        val results = JSONObject(Http.get(url, 20_000)).optJSONArray("results")
+        val results = JSONObject(Http.getCached(url, 12_000, 6_000, cacheOnly)).optJSONArray("results")
             ?: return@coroutineScope emptyList<StremioItem>()
 
         val picks = ArrayList<JSONObject>()
@@ -51,7 +51,7 @@ class TmdbRepository {
             async {
                 runCatching<StremioItem?> {
                     val id = o.getInt("id")
-                    val ext = JSONObject(Http.get("$BASE/$kind/$id/external_ids?api_key=${enc(apiKey)}", 15_000))
+                    val ext = JSONObject(Http.getCached("$BASE/$kind/$id/external_ids?api_key=${enc(apiKey)}", 12_000, 6_000, cacheOnly))
                     val imdb = str(ext, "imdb_id") ?: return@runCatching null
                     toItem(o, imdb, kind)
                 }.getOrNull()
