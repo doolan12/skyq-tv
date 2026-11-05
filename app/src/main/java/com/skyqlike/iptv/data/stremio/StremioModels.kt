@@ -78,7 +78,27 @@ data class StremioStreams(
     val failedAddons: Int,
 )
 
-data class StremioHome(val addons: List<StremioAddon>, val rows: List<StremioRow>, val failedAddons: Int)
+data class StremioHome(
+    val addons: List<StremioAddon>,
+    val rows: List<StremioRow>,
+    val failedAddons: Int,
+    /** How each addon did while loading, for the Addon health page. */
+    val health: List<AddonHealth> = emptyList(),
+)
+
+/** How one addon did the last time Home loaded. Never holds the addon's web address, which can contain a key. */
+data class AddonHealth(
+    val name: String,
+    val reachable: Boolean,
+    val manifestMs: Long,
+    val listsTried: Int,
+    val listsWithTitles: Int,
+    val slowestListMs: Long,
+    val note: String = "",
+)
+
+/** How one addon did the last time streams were looked up. */
+data class StreamStat(val name: String, val ms: Long, val count: Int, val ok: Boolean)
 
 /** Who is signed in, and any addon links added by hand. */
 data class StremioSession(

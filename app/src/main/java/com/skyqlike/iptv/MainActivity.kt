@@ -365,6 +365,8 @@ private fun ReelApp(context: Context) {
                 session = stremio,
                 actions = actions,
                 profileName = current.name,
+                health = (stremioState as? StremioState.Ready)?.home?.health ?: emptyList(),
+                streamStats = stremioRepo.streamStats.values.toList(),
                 onClearHistory = {
                     historyStore.clear()
                     history = historyStore.entries()

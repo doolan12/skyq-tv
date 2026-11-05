@@ -19,6 +19,9 @@ import java.net.URLEncoder
  */
 class StremioRepository(private val apiBase: String = "https://api.strem.io") {
 
+    /** How each addon did the last time streams were looked up, for the Addon health page. */
+    val streamStats = java.util.concurrent.ConcurrentHashMap<String, StreamStat>()
+
     // ------------------------------------------------------------------ account
 
     /** Signs in and returns the sign-in key. The password is used once and never kept. */
@@ -122,17 +125,35 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
             }
 
             val loaded = coroutineScope {
-                reachable.map { u -> async { runCatching { loadAddon(u, cacheOnly) } } }.awaitAll()
+                reachable.map { u ->
+                    async {
+                        val started = System.currentTimeMillis()
+                        val r = runCatching { loadAddon(u, cacheOnly) }
+                        Triple(u, r, System.currentTimeMillis() - started)
+                    }
+                }.awaitAll()
             }
-            val addons = loaded.mapNotNull { it.getOrNull() }
+            val addons = loaded.mapNotNull { it.second.getOrNull() }
             if (addons.isEmpty()) {
                 return@withContext Result.failure(Exception("Couldn't reach any of your addons. Check your internet connection."))
             }
             val failedCount = loaded.size - addons.size
-            val rows = loadRows(addons, cacheOnly) { partial -> onPartial?.invoke(StremioHome(addons, partial, failedCount)) }
+            val catalogStats = ArrayList<CatalogStat>()
+            val rows = loadRows(addons, cacheOnly, catalogStats) { partial -> onPartial?.invoke(StremioHome(addons, partial, failedCount)) }
             if (cacheOnly && rows.isEmpty()) return@withContext Result.failure(Exception("Nothing saved yet."))
             if (!cacheOnly) Http.writeCache(HOME_URLS_KEY, reachable.joinToString("\n"))
-            Result.success(StremioHome(addons, rows, failedCount))
+            val health = if (cacheOnly) emptyList() else loaded.map { (u, r, ms) ->
+                val addon = r.getOrNull()
+                if (addon == null) {
+                    // Only the host is kept, because the full address can contain a key.
+                    val host = runCatching { java.net.URI(u).host }.getOrNull() ?: "Unknown addon"
+                    AddonHealth(host, false, ms, 0, 0, 0, (r.exceptionOrNull() as? Exception)?.let { Http.friendly(it) } ?: "")
+                } else {
+                    val mine = synchronized(catalogStats) { catalogStats.filter { it.addonBase == addon.baseUrl } }
+                    AddonHealth(addon.name, true, ms, mine.size, mine.count { it.count > 0 }, mine.maxOfOrNull { it.ms } ?: 0L)
+                }
+            }
+            Result.success(StremioHome(addons, rows, failedCount, health))
         } catch (e: Exception) {
             Result.failure(Exception(Http.friendly(e)))
         }
@@ -209,6 +230,8 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
     private suspend fun loadRows(
         addons: List<StremioAddon>,
         cacheOnly: Boolean = false,
+        /** Collects how long each list took and how many titles it gave, for the Addon health page. */
+        stats: MutableList<CatalogStat>? = null,
         /** Called each time another row arrives, with every row that has arrived so far (in list order). */
         onPartial: ((List<StremioRow>) -> Unit)? = null,
     ): List<StremioRow> = coroutineScope {
@@ -234,7 +257,9 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
 
         jobs.mapIndexed { i, (a, c) ->
             async {
+                val started = System.currentTimeMillis()
                 val items = runCatching { fetchCatalog(a, c, null, cacheOnly, fast = true) }.getOrDefault(emptyList())
+                stats?.let { st -> synchronized(st) { st += CatalogStat(a.baseUrl, System.currentTimeMillis() - started, items.size) } }
                 if (onPartial != null) {
                     val rows = synchronized(results) {
                         results[i] = items
@@ -427,7 +452,14 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
         coroutineScope {
             targets.map { a ->
                 async {
+                    val started = System.currentTimeMillis()
                     val r = runCatching { fetchStreams(a, type, videoId) }
+                    streamStats[a.name] = StreamStat(
+                        a.name,
+                        System.currentTimeMillis() - started,
+                        r.getOrNull()?.let { it.first.size + it.second } ?: 0,
+                        r.isSuccess,
+                    )
                     val snapshot = synchronized(gathered) {
                         gathered += r
                         build()
@@ -627,3 +659,6 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
 
 /** What you asked for in Settings: [quality] 0 = automatic, 1 = up to 1080p, 2 = up to 720p, 3 = best (4K); [maxGb] 0 = no limit. */
 data class StreamPrefs(val quality: Int = 0, val maxGb: Int = 0)
+
+/** How long one list took and how many titles it gave. */
+class CatalogStat(val addonBase: String, val ms: Long, val count: Int)

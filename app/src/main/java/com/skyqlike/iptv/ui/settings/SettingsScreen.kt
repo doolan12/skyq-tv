@@ -27,6 +27,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import com.skyqlike.iptv.data.settings.AppSettings
+import com.skyqlike.iptv.data.stremio.AddonHealth
+import com.skyqlike.iptv.data.stremio.StreamStat
 import com.skyqlike.iptv.data.stremio.StremioSession
 import com.skyqlike.iptv.ui.common.ActionButton
 import com.skyqlike.iptv.ui.common.FocusTile
@@ -58,6 +60,8 @@ fun SettingsScreen(
     session: StremioSession,
     actions: StremioActions,
     profileName: String,
+    health: List<AddonHealth>,
+    streamStats: List<StreamStat>,
     onClearHistory: () -> Unit,
     onSwitchProfile: () -> Unit,
     onBack: () -> Unit,
@@ -65,6 +69,10 @@ fun SettingsScreen(
     var page by remember { mutableIntStateOf(0) } // 0 = the list, 1 = account and addons
     BackHandler(enabled = page == 0) { onBack() }
 
+    if (page == 2) {
+        AddonHealthPage(health = health, streamStats = streamStats, onBack = { page = 0 })
+        return
+    }
     if (page == 1) {
         AccountPage(session = session, actions = actions, canClose = true, onClose = { page = 0 })
         return
@@ -97,6 +105,9 @@ fun SettingsScreen(
 
         item {
             SettingRow("Account and addons", accountSummary, Modifier.focusRequester(firstFocus)) { page = 1 }
+        }
+        item {
+            SettingRow("Addon health", "${health.count { it.reachable }} of ${health.size} working".takeIf { health.isNotEmpty() } ?: "Not loaded yet") { page = 2 }
         }
         item {
             SettingRow("Pick the best stream automatically", onOff(settings.quickPlay)) {
