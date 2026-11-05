@@ -5,6 +5,7 @@ package com.skyqlike.iptv.ui.player
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
@@ -28,6 +29,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -71,6 +73,7 @@ import androidx.tv.material3.Text
 import com.skyqlike.iptv.data.intro.IntroRepository
 import com.skyqlike.iptv.data.intro.SkipSegment
 import com.skyqlike.iptv.data.model.PlayItem
+import com.skyqlike.iptv.data.model.PlayKind
 import com.skyqlike.iptv.ui.common.FocusTile
 import com.skyqlike.iptv.ui.theme.Palette
 import kotlinx.coroutines.delay
@@ -105,11 +108,16 @@ fun PlayerScreen(
     subtitlesOn: Boolean = false,
     audioLang: String = "",
     skipIntroOn: Boolean = true,
+    /** Works out the episode after this one (stream and subtitles included), or null if there is none. */
+    nextEpisode: (suspend (PlayItem) -> PlayItem?)? = null,
+    autoNext: Boolean = true,
 ) {
     val context = LocalContext.current
     val introRepo = remember { IntroRepository() }
     val scope = rememberCoroutineScope()
 
+    // The list grows when the next episode is lined up.
+    val playlist = remember { mutableStateListOf<PlayItem>().apply { addAll(items) } }
     var index by remember { mutableIntStateOf(startIndex.coerceIn(0, items.lastIndex)) }
     var overlay by remember { mutableStateOf(true) }
     var overlayTick by remember { mutableIntStateOf(0) }
@@ -148,7 +156,7 @@ fun PlayerScreen(
 
     // Remembers how far through we are, so it can be resumed later.
     fun saveProgress(finished: Boolean = false) {
-        val cur = items[index]
+        val cur = playlist[index]
         val dur = exo.duration
         if (dur == C.TIME_UNSET || dur <= 0L) return
         onProgress(cur, if (finished) dur else exo.currentPosition, dur)
@@ -237,7 +245,7 @@ fun PlayerScreen(
 
     // Start (or switch to) the chosen item.
     LaunchedEffect(index) {
-        val cur = items[index]
+        val cur = playlist[index]
         token[0]++
         attempts[0] = 0
         failed = false
@@ -300,7 +308,7 @@ fun PlayerScreen(
     var segments by remember { mutableStateOf<List<SkipSegment>>(emptyList()) }
     LaunchedEffect(index) {
         segments = emptyList()
-        if (skipIntroOn) segments = introRepo.segmentsFor(items[index].externalId)
+        if (skipIntroOn) segments = introRepo.segmentsFor(playlist[index].externalId)
     }
     val activeSkip = segments.firstOrNull { positionMs >= it.startMs - 1_000 && positionMs < it.endMs - 1_000 }
 
@@ -322,7 +330,29 @@ fun PlayerScreen(
         if (picker != null) picker = null else onClose()
     }
 
-    val item = items[index]
+    val item = playlist[index]
+
+    // Up next: in the last minute of an episode, quietly line up the one after it.
+    var upNext by remember(index) { mutableStateOf<PlayItem?>(null) }
+    var upNextTried by remember(index) { mutableStateOf(false) }
+    val remainingMs = if (durationMs > 0L) durationMs - positionMs else Long.MAX_VALUE
+    val nearEnd = nextEpisode != null && autoNext && item.kind == PlayKind.EPISODE &&
+        index == playlist.lastIndex && remainingMs < 60_000L
+    LaunchedEffect(index, nearEnd) {
+        if (nearEnd && !upNextTried) {
+            upNextTried = true
+            upNext = runCatching { nextEpisode?.invoke(item) }.getOrNull()
+        }
+    }
+    val showUpNext = upNext != null && remainingMs < 20_000L && picker == null && !failed
+
+    fun playNext() {
+        val n = upNext ?: return
+        saveProgress(finished = true)
+        playlist.add(n)
+        upNext = null
+        index = playlist.lastIndex
+    }
 
     fun bump() {
         overlayTick++
@@ -342,7 +372,7 @@ fun PlayerScreen(
     LaunchedEffect(endedTick) {
         if (endedTick > 0) {
             saveProgress(finished = true)
-            overlay = true
+            if (upNext != null) playNext() else overlay = true
         }
     }
 
@@ -356,6 +386,10 @@ fun PlayerScreen(
             Key.MediaFastForward -> { seekBy(30_000); return@handle true }
             Key.MediaRewind -> { seekBy(-30_000); return@handle true }
             else -> Unit
+        }
+        if (showUpNext && !overlay && (ev.key == Key.DirectionCenter || ev.key == Key.Enter || ev.key == Key.NumPadEnter)) {
+            playNext()
+            return@handle true
         }
         if (!overlay && picker == null) {
             // With the Skip button showing and the controls hidden, OK skips.
@@ -422,6 +456,33 @@ fun PlayerScreen(
             ) {
                 exo.seekTo(activeSkip.endMs)
                 positionMs = activeSkip.endMs
+            }
+        }
+
+        // "Up next" card with a countdown. Tap it (or press OK) to start now.
+        if (showUpNext) {
+            val next = upNext
+            val secs = ((remainingMs + 999) / 1000).coerceAtLeast(0)
+            Column(
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 40.dp, bottom = if (overlay) 190.dp else 60.dp)
+                    .width(300.dp)
+                    .background(Color(0xE6101014), RoundedCornerShape(12.dp))
+                    .clickable { playNext() }
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text("Up next", fontSize = 13.sp, color = Palette.TextSecondary)
+                Text(
+                    next?.subtitle?.ifBlank { next.title } ?: "",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text("Starts in ${secs}s  -  tap to play now", fontSize = 13.sp, color = Palette.Accent)
             }
         }
 

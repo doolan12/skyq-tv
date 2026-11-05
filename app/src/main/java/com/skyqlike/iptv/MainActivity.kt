@@ -37,6 +37,7 @@ import com.skyqlike.iptv.data.stremio.StremioItem
 import com.skyqlike.iptv.data.stremio.StremioRepository
 import com.skyqlike.iptv.data.stremio.StremioState
 import com.skyqlike.iptv.data.stremio.StremioStore
+import com.skyqlike.iptv.data.stremio.StremioVideo
 import com.skyqlike.iptv.data.tmdb.TmdbRepository
 import com.skyqlike.iptv.data.tmdb.Trending
 import com.skyqlike.iptv.ui.browse.BrowseScreen
@@ -54,7 +55,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
 /** What the player has been asked to play: a list of things, and which one to start on. */
-private data class PlayRequest(val items: List<PlayItem>, val start: Int)
+private data class PlayRequest(
+    val items: List<PlayItem>,
+    val start: Int,
+    val next: (suspend (PlayItem) -> PlayItem?)? = null,
+)
 
 /** A title that has been opened, and whether Play was pressed to open it. */
 private data class DetailRequest(val item: StremioItem, val autoPlay: Boolean)
@@ -218,6 +223,31 @@ private fun ReelApp(context: Context) {
             val addons = (stremioState as? StremioState.Ready)?.home?.addons ?: emptyList()
             val videoId = video?.id ?: title.id
             val subType = if (video != null) "series" else title.type
+            // Works out the episode after this one, with its stream and subtitles, for the "Up next" card.
+            suspend fun resolve(nv: StremioVideo): PlayItem? {
+                val found = stremioRepo.streams(addons, "series", nv.id)
+                val s = found.playable.firstOrNull() ?: return null
+                val moreSubs = runCatching {
+                    withTimeoutOrNull(5000L) { stremioRepo.subtitles(addons, "series", nv.id) }
+                }.getOrNull() ?: emptyList()
+                return PlayItem(
+                    key = "stremio:series:${title.id}|${nv.id}",
+                    title = title.name,
+                    subtitle = "S${nv.season} E${nv.episode}  ${nv.title}",
+                    url = s.url,
+                    kind = PlayKind.EPISODE,
+                    imageUrl = title.poster,
+                    externalId = nv.id,
+                    subtitles = moreSubs,
+                )
+            }
+            var nextResolver: (suspend (PlayItem) -> PlayItem?)? = null
+            if (video != null) {
+                val ordered = title.videos.filter { it.season > 0 }.sortedWith(compareBy({ it.season }, { it.episode }))
+                val at = ordered.indexOfFirst { it.id == video.id }
+                val nv = if (at >= 0) ordered.getOrNull(at + 1) else null
+                if (nv != null) nextResolver = { _ -> resolve(nv) }
+            }
             val canFind = addons.any { it.supports("subtitles", subType, videoId) }
             scope.launch {
                 // Ask subtitle addons (like OpenSubtitles) for files; never wait more than a few seconds.
@@ -242,6 +272,7 @@ private fun ReelApp(context: Context) {
                         )
                     ),
                     0,
+                    nextResolver,
                 )
             }
         },
@@ -352,6 +383,8 @@ private fun ReelApp(context: Context) {
                 subtitlesOn = settings.subtitlesOn,
                 audioLang = settings.audioLang,
                 skipIntroOn = settings.skipIntro,
+                nextEpisode = request.next,
+                autoNext = settings.autoNext,
             )
         }
     }

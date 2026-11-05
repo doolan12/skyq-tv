@@ -15,6 +15,8 @@ data class AppSettings(
     val quickPlay: Boolean = true,
     /** Show a Skip Intro button where the community database knows the times. */
     val skipIntro: Boolean = true,
+    /** At the end of an episode, start the next one by itself. */
+    val autoNext: Boolean = true,
     /** The user's free TMDB key. It switches on the Trending rows. Kept on this device only. */
     val tmdbKey: String = "",
     /** The user's free Top Posters key. It puts rating badges on posters. Kept on this device only. */
@@ -33,6 +35,7 @@ class SettingsStore(context: Context) {
         audioLang = prefs.getString("audioLang", "en") ?: "",
         quickPlay = prefs.getBoolean("quickPlay", true),
         skipIntro = prefs.getBoolean("skipIntro", true),
+        autoNext = prefs.getBoolean("autoNext", true),
         tmdbKey = prefs.getString("tmdbKey", "") ?: "",
         topPostersKey = prefs.getString("topPostersKey", "") ?: "",
     )
@@ -46,6 +49,7 @@ class SettingsStore(context: Context) {
             .putString("audioLang", s.audioLang)
             .putBoolean("quickPlay", s.quickPlay)
             .putBoolean("skipIntro", s.skipIntro)
+            .putBoolean("autoNext", s.autoNext)
             .putString("tmdbKey", s.tmdbKey)
             .putString("topPostersKey", s.topPostersKey)
             .apply()

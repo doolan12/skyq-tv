@@ -106,6 +106,11 @@ fun SettingsScreen(
             }
         }
         item {
+            SettingRow("Play next episode automatically", onOff(settings.autoNext)) {
+                onChange(settings.copy(autoNext = !settings.autoNext))
+            }
+        }
+        item {
             SettingRow("Resume where I left off", onOff(settings.resume)) {
                 onChange(settings.copy(resume = !settings.resume))
             }
