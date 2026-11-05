@@ -34,6 +34,7 @@ import com.skyqlike.iptv.data.profile.ProfileStore
 import com.skyqlike.iptv.data.settings.SettingsStore
 import com.skyqlike.iptv.data.stremio.supports
 import com.skyqlike.iptv.data.stremio.StremioFavouritesStore
+import com.skyqlike.iptv.data.stremio.StremioHome
 import com.skyqlike.iptv.data.stremio.StremioItem
 import com.skyqlike.iptv.data.stremio.StremioRepository
 import com.skyqlike.iptv.data.stremio.StremioState
@@ -150,7 +151,13 @@ private fun ReelApp(context: Context) {
                 // Show last time's Home straight away, then refresh it in the background.
                 val saved = stremioRepo.loadHome(stremio, cacheOnly = true).getOrNull()
                 if (saved != null && gen == loadGen[0]) stremioState = StremioState.Ready(saved)
-                val fresh = stremioRepo.loadHome(stremio)
+                var finished = false
+                // With nothing saved, let rows appear one by one as they arrive instead of waiting for all of them.
+                val partialUpdate: (StremioHome) -> Unit = { partial ->
+                    scope.launch { if (!finished && gen == loadGen[0]) stremioState = StremioState.Ready(partial) }
+                }
+                val fresh = stremioRepo.loadHome(stremio, onPartial = if (saved != null) null else partialUpdate)
+                finished = true
                 if (gen != loadGen[0]) return@launch
                 stremioState = fresh.fold(
                     onSuccess = { StremioState.Ready(it) },

@@ -97,7 +97,12 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
     }
 
     /** Everything for the Stremio home page: your addons, and a row of titles for each of their lists. */
-    suspend fun loadHome(session: StremioSession, cacheOnly: Boolean = false): Result<StremioHome> = withContext(Dispatchers.IO) {
+    suspend fun loadHome(
+        session: StremioSession,
+        cacheOnly: Boolean = false,
+        /** Called with a growing Home each time another row arrives, so the screen can fill in as it goes. */
+        onPartial: ((StremioHome) -> Unit)? = null,
+    ): Result<StremioHome> = withContext(Dispatchers.IO) {
         try {
             val urls = LinkedHashSet<String>()
             if (cacheOnly) {
@@ -123,10 +128,11 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
             if (addons.isEmpty()) {
                 return@withContext Result.failure(Exception("Couldn't reach any of your addons. Check your internet connection."))
             }
-            val rows = loadRows(addons, cacheOnly)
+            val failedCount = loaded.size - addons.size
+            val rows = loadRows(addons, cacheOnly) { partial -> onPartial?.invoke(StremioHome(addons, partial, failedCount)) }
             if (cacheOnly && rows.isEmpty()) return@withContext Result.failure(Exception("Nothing saved yet."))
             if (!cacheOnly) Http.writeCache(HOME_URLS_KEY, reachable.joinToString("\n"))
-            Result.success(StremioHome(addons, rows, loaded.size - addons.size))
+            Result.success(StremioHome(addons, rows, failedCount))
         } catch (e: Exception) {
             Result.failure(Exception(Http.friendly(e)))
         }
@@ -200,26 +206,48 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
 
     // ------------------------------------------------------------------ browsing
 
-    private suspend fun loadRows(addons: List<StremioAddon>, cacheOnly: Boolean = false): List<StremioRow> = coroutineScope {
+    private suspend fun loadRows(
+        addons: List<StremioAddon>,
+        cacheOnly: Boolean = false,
+        /** Called each time another row arrives, with every row that has arrived so far (in list order). */
+        onPartial: ((List<StremioRow>) -> Unit)? = null,
+    ): List<StremioRow> = coroutineScope {
         val jobs = addons.flatMap { a ->
             a.catalogs
                 .filter { isShown(it.type) && !it.needsExtra }
                 .take(8)
                 .map { a to it }
         }
-        val fetched = jobs.map { (a, c) ->
-            async { runCatching { fetchCatalog(a, c, null, cacheOnly, fast = true) }.getOrDefault(emptyList()) }
-        }.awaitAll()
-
-        val rows = ArrayList<Triple<StremioAddon, StremioCatalogDef, List<StremioItem>>>()
-        jobs.forEachIndexed { i, (a, c) -> if (fetched[i].isNotEmpty()) rows += Triple(a, c, fetched[i]) }
 
         fun label(c: StremioCatalogDef) = "${c.name} - ${if (c.type == "movie") "Movies" else "Series"}"
-        val counts = rows.groupingBy { label(it.second) }.eachCount()
-        rows.map { (a, c, items) ->
+        // Titles that repeat get the addon's name added. Decided up front so a title never changes as rows arrive.
+        val counts = jobs.groupingBy { label(it.second) }.eachCount()
+        fun rowFor(i: Int, items: List<StremioItem>): StremioRow {
+            val (a, c) = jobs[i]
             val title = label(c).let { if ((counts[it] ?: 0) > 1) "$it (${a.name})" else it }
-            StremioRow(title, c.type, items.take(30))
+            return StremioRow(title, c.type, items.take(30))
         }
+
+        val results = arrayOfNulls<List<StremioItem>>(jobs.size)
+        fun snapshot(): List<StremioRow> =
+            jobs.indices.mapNotNull { i -> results[i]?.takeIf { it.isNotEmpty() }?.let { rowFor(i, it) } }
+
+        jobs.mapIndexed { i, (a, c) ->
+            async {
+                val items = runCatching { fetchCatalog(a, c, null, cacheOnly, fast = true) }.getOrDefault(emptyList())
+                if (onPartial != null) {
+                    val rows = synchronized(results) {
+                        results[i] = items
+                        snapshot()
+                    }
+                    if (items.isNotEmpty()) onPartial(rows)
+                } else {
+                    results[i] = items
+                }
+            }
+        }.awaitAll()
+
+        snapshot()
     }
 
     private fun isShown(type: String) = type == "movie" || type == "series"
