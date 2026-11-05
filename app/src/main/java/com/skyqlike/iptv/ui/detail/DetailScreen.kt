@@ -67,6 +67,8 @@ fun DetailScreen(
     isFavourite: Boolean,
     autoPlay: Boolean,
     quickPlay: Boolean,
+    /** For "Up next" tiles: the episode to start as soon as the series has loaded. */
+    autoEpisodeId: String? = null,
     onBack: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
@@ -79,6 +81,9 @@ fun DetailScreen(
 
     LaunchedEffect(start.id) {
         info = runCatching { actions.loadDetails(start) }.getOrDefault(start)
+        if (autoEpisodeId != null) {
+            info.videos.firstOrNull { it.id == autoEpisodeId }?.let { picking = Pick(it) }
+        }
     }
 
     val pick = picking

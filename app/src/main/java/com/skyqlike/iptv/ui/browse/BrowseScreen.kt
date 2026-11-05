@@ -43,6 +43,7 @@ import androidx.tv.material3.Text
 import com.skyqlike.iptv.data.history.HistoryEntry
 import com.skyqlike.iptv.data.profile.Profile
 import com.skyqlike.iptv.data.stremio.StremioItem
+import com.skyqlike.iptv.data.stremio.StremioVideo
 import com.skyqlike.iptv.data.stremio.StremioRow
 import com.skyqlike.iptv.data.stremio.StremioState
 import com.skyqlike.iptv.data.tmdb.Trending
@@ -85,6 +86,9 @@ private class PairBucket(val label: String) {
     val items = ArrayList<StremioItem>()
 }
 
+/** The episode after one you just finished. */
+private class UpNext(val item: StremioItem, val video: StremioVideo, val updatedAt: Long)
+
 /** A row on the page, with the size its tiles are drawn at. */
 private class RailSpec(val rail: Rail, val width: Dp, val height: Dp, val top10: Boolean = false)
 
@@ -103,6 +107,8 @@ fun BrowseScreen(
     actions: StremioActions,
     onOpen: (StremioItem) -> Unit,
     onPlay: (StremioItem) -> Unit,
+    /** Opens a series and starts this episode (used by the "Up next" tiles in Continue Watching). */
+    onOpenEpisode: (StremioItem, String) -> Unit,
     onSettings: () -> Unit,
     onSwitchProfile: () -> Unit,
 ) {
@@ -201,6 +207,34 @@ fun BrowseScreen(
         watchedGenres = out
     }
 
+    // Finished an episode? Continue Watching should offer the next one, like Netflix does.
+    // Only the newest entry for each show counts, and each show is looked up once.
+    var upNext by remember { mutableStateOf<List<UpNext>>(emptyList()) }
+    val videosCache = remember { HashMap<String, List<StremioVideo>>() }
+    LaunchedEffect(ready != null, watched.take(12).map { it.key + it.finished }) {
+        if (ready == null) return@LaunchedEffect
+        val seen = HashSet<String>()
+        val latest = watched.filter { it.key.startsWith("stremio:series:") }
+            .filter { seen.add(it.key.substringAfter("stremio:series:").substringBefore('|')) }
+            .take(6)
+        val out = ArrayList<UpNext>()
+        for (e in latest) {
+            if (!e.finished) continue
+            val seriesId = e.key.substringAfter("stremio:series:").substringBefore('|')
+            val epId = e.key.substringAfter('|', "")
+            if (epId.isEmpty()) continue
+            val item = entryToItem(e) ?: continue
+            val videos = videosCache.getOrPut(seriesId) {
+                runCatching { actions.loadDetails(item).videos }.getOrDefault(emptyList())
+            }
+            val ordered = videos.filter { it.season > 0 }.sortedWith(compareBy({ it.season }, { it.episode }))
+            val at = ordered.indexOfFirst { it.id == epId }
+            val next = if (at >= 0) ordered.getOrNull(at + 1) else null
+            if (next != null) out += UpNext(item, next, e.updatedAt)
+        }
+        upNext = out
+    }
+
     when (state) {
         is StremioState.Idle, is StremioState.Loading -> Column(Modifier.fillMaxSize()) {
             TopBar(tab, selectTab, profile, onSettings, onSwitchProfile)
@@ -245,22 +279,28 @@ fun BrowseScreen(
                 val cont = continueEntries.mapNotNull { e -> entryToItem(e)?.let { e to it } }
                     .filter { filterType == null || it.second.type == filterType }
                     .distinctBy { it.second.type + ":" + it.second.id }
-                if (cont.isEmpty()) return
-                rails += RailSpec(
-                    Rail(
-                        "Continue Watching",
-                        cont.map { (e, found) ->
-                            HomeTile(
-                                id = "cw:" + e.key,
-                                title = found.name,
-                                subtitle = e.subtitle,
-                                imageUrl = found.poster,
-                                progress = if (e.durationMs > 0) e.positionMs.toFloat() / e.durationMs else null,
-                            ) { onOpen(found) }
-                        },
-                    ),
-                    200.dp, 112.dp,
-                )
+                val tiles = ArrayList<Pair<Long, HomeTile>>()
+                cont.forEach { (e, found) ->
+                    tiles += e.updatedAt to HomeTile(
+                        id = "cw:" + e.key,
+                        title = found.name,
+                        subtitle = e.subtitle,
+                        imageUrl = found.poster,
+                        progress = if (e.durationMs > 0) e.positionMs.toFloat() / e.durationMs else null,
+                    ) { onOpen(found) }
+                }
+                if (filterType == null || filterType == "series") {
+                    upNext.forEach { u ->
+                        tiles += u.updatedAt to HomeTile(
+                            id = "next:" + u.item.id + ":" + u.video.id,
+                            title = u.item.name,
+                            subtitle = "Up next: S${u.video.season} E${u.video.episode}",
+                            imageUrl = u.item.poster,
+                        ) { onOpenEpisode(u.item, u.video.id) }
+                    }
+                }
+                if (tiles.isEmpty()) return
+                rails += RailSpec(Rail("Continue Watching", tiles.sortedByDescending { it.first }.map { it.second }), 200.dp, 112.dp)
             }
 
             // Suggestions for Home: "Because you watched ..." and "Picked for you", from the titles

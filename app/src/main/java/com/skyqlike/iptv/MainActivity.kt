@@ -68,7 +68,7 @@ private data class PlayRequest(
 )
 
 /** A title that has been opened, and whether Play was pressed to open it. */
-private data class DetailRequest(val item: StremioItem, val autoPlay: Boolean)
+private data class DetailRequest(val item: StremioItem, val autoPlay: Boolean, val episodeId: String? = null)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -364,6 +364,7 @@ private fun ReelApp(context: Context) {
                 isFavourite = favourites.any { it.type == opened.item.type && it.id == opened.item.id },
                 autoPlay = opened.autoPlay,
                 quickPlay = settings.quickPlay,
+                autoEpisodeId = opened.episodeId,
                 onBack = { detail = null },
             )
             else -> BrowseScreen(
@@ -378,6 +379,7 @@ private fun ReelApp(context: Context) {
                 actions = actions,
                 onOpen = { detail = DetailRequest(it, false) },
                 onPlay = { detail = DetailRequest(it, true) },
+                onOpenEpisode = { item, episodeId -> detail = DetailRequest(item, false, episodeId) },
                 onSettings = { showSettings = true },
                 onSwitchProfile = {
                     resetNavigation()
