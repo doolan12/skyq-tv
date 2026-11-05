@@ -40,6 +40,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
@@ -696,7 +698,7 @@ fun BrowseScreen(
             }
             if (isTv) {
                 BoxWithConstraints(Modifier.fillMaxSize()) {
-                    val bannerHeight = (maxHeight * 0.42f).coerceIn(150.dp, 300.dp)
+                    val bannerHeight = (maxHeight * 0.46f).coerceIn(210.dp, 300.dp)
                     Box(Modifier.fillMaxSize()) {
                         Column(Modifier.fillMaxSize()) {
                             bannerBox(bannerHeight)
@@ -833,108 +835,74 @@ private fun Billboard(
     // A short banner drops the extra lines so the title and buttons still fit.
     val tight = height < 200.dp
     val medium = height < 260.dp
-    Box(
-        Modifier.fillMaxWidth().height(height).pointerInput(heroCount, heroPos) {
-            var drag = 0f
-            detectHorizontalDragGestures(
-                onDragStart = { drag = 0f },
-                onDragEnd = {
-                    if (heroCount > 1 && drag > 90f) onHeroJump((heroPos - 1 + heroCount) % heroCount)
-                    else if (heroCount > 1 && drag < -90f) onHeroJump((heroPos + 1) % heroCount)
-                },
-                onHorizontalDrag = { _, dx -> drag += dx },
-            )
-        }
-    ) {
+    Box(Modifier.fillMaxWidth().height(height)) {
+        // A blurred, darkened copy of the artwork as the backdrop, so the poster and the writing stand out.
         FadeIn(item.type + ":" + item.id) {
-            Artwork(item.background ?: item.poster, item.name, Modifier.fillMaxSize())
+            Artwork(item.background ?: item.poster, item.name, Modifier.fillMaxSize().blur(26.dp))
         }
-        // The trailer fades in over the picture once it is really playing.
-        if (previewId != null) {
-            key(item.type + ":" + item.id + ":" + previewId) {
-                TrailerPreview(
-                    videoId = previewId,
-                    modifier = Modifier.fillMaxSize(),
-                    onPlaying = onPreviewPlaying,
-                    onEnded = onPreviewStopped,
-                    onFailed = onPreviewFailed,
-                )
-            }
-        }
-        // Dark on the left so the writing is easy to read, and fading into the page at the bottom.
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.horizontalGradient(0f to Color.Black.copy(alpha = 0.92f), 0.55f to Color.Black.copy(alpha = 0.5f), 1f to Color.Transparent)
-            )
-        )
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.62f)))
+        // Fades into the page at the bottom, so there's no hard edge.
         Box(
             Modifier.fillMaxSize().background(
                 Brush.verticalGradient(0f to Color.Transparent, 0.4f to Color.Transparent, 0.8f to Palette.Background.copy(alpha = 0.85f), 1f to Palette.Background)
             )
         )
-        // Carousel controls: back, dots showing which title this is, forward. Swiping the banner works too.
-        if (heroCount > 1) {
-            Row(
-                Modifier.align(Alignment.BottomEnd).padding(end = 40.dp, bottom = if (tight) 8.dp else 22.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                ActionButton("‹", Modifier.width(44.dp)) { onHeroJump((heroPos - 1 + heroCount) % heroCount) }
-                repeat(heroCount) { i ->
-                    Box(
-                        Modifier
-                            .size(if (i == heroPos) 10.dp else 8.dp)
-                            .background(if (i == heroPos) Color.White else Color(0x66FFFFFF), CircleShape)
-                            .clickable { onHeroJump(i) }
+        // The poster on the left, the details beside it. The top gap keeps clear of the tab bar.
+        val posterHeight = (height - 78.dp).coerceIn(90.dp, 230.dp)
+        Row(
+            Modifier.fillMaxSize().padding(start = 48.dp, end = 48.dp, top = 58.dp, bottom = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(22.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FadeIn(item.type + ":" + item.id + ":poster") {
+                Artwork(
+                    item.poster ?: item.background,
+                    item.name,
+                    Modifier.height(posterHeight).width(posterHeight * 2 / 3).clip(RoundedCornerShape(8.dp)),
+                )
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (!tight && !medium) {
+                    Text(
+                        if (item.type == "series") "SERIES" else "FILM",
+                        fontSize = 13.sp,
+                        color = Palette.Accent,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 2.sp,
                     )
                 }
-                ActionButton("›", Modifier.width(44.dp)) { onHeroJump((heroPos + 1) % heroCount) }
-            }
-        }
-        Column(
-            Modifier.align(Alignment.CenterStart).fillMaxWidth(0.5f).padding(start = 48.dp, top = if (tight) 50.dp else 56.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            if (!tight && !medium) {
                 Text(
-                    if (item.type == "series") "SERIES" else "FILM",
-                    fontSize = 13.sp,
-                    color = Palette.Accent,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 2.sp,
-                )
-            }
-            Text(
-                item.name,
-                fontSize = if (tight) 26.sp else if (medium) 30.sp else 38.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = Color.White,
-                maxLines = if (tight) 1 else 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (!tight) MetaLine(item.year, "", item.rating, fontSize = 14.sp)
-            if (!tight && !medium && item.genres.isNotEmpty()) {
-                Text(item.genres.take(3).joinToString("  •  "), fontSize = 14.sp, color = Color(0xFFD0D0D8))
-            }
-            if (!tight && item.description.isNotBlank()) {
-                Text(
-                    item.description,
-                    fontSize = if (medium) 12.sp else 14.sp,
-                    color = Color(0xFFC0C0C8),
-                    maxLines = if (medium) 2 else 3,
+                    item.name,
+                    fontSize = if (tight) 24.sp else if (medium) 28.sp else 34.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color.White,
+                    maxLines = if (tight) 1 else 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = if (tight) 0.dp else 6.dp)) {
-                ActionButton(
-                    "Play",
-                    Modifier.width(120.dp).focusRequester(playFocus),
-                    accent = true,
-                    accentColor = Color.White,
-                    textColor = Color.Black,
-                ) { onPlay() }
-                ActionButton("More Info", Modifier.width(130.dp)) { onInfo() }
-                ActionButton(if (isFavourite) "✓ My List" else "+ My List", Modifier.width(130.dp)) { onFavourite() }
+                MetaLine(item.year, "", item.rating, fontSize = 14.sp)
+                if (!tight && item.genres.isNotEmpty()) {
+                    Text(item.genres.take(3).joinToString("  •  "), fontSize = 14.sp, color = Color(0xFFD0D0D8))
+                }
+                if (!tight && item.description.isNotBlank()) {
+                    Text(
+                        item.description,
+                        fontSize = if (medium) 12.sp else 14.sp,
+                        color = Color(0xFFC8C8D0),
+                        maxLines = if (medium) 2 else 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 4.dp)) {
+                    ActionButton(
+                        "Play",
+                        Modifier.width(120.dp).focusRequester(playFocus),
+                        accent = true,
+                        accentColor = Color.White,
+                        textColor = Color.Black,
+                    ) { onPlay() }
+                    ActionButton("More Info", Modifier.width(130.dp)) { onInfo() }
+                    ActionButton(if (isFavourite) "✓ My List" else "+ My List", Modifier.width(130.dp)) { onFavourite() }
+                }
             }
         }
     }

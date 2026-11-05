@@ -503,7 +503,7 @@ private fun ReelApp(context: Context) {
                 actions = actions,
                 onOpen = { detail = DetailRequest(it, false) },
                 onPlay = { detail = DetailRequest(it, true) },
-                previewsOn = settings.previews,
+                previewsOn = false,
                 onRemoveContinue = {
                     historyStore.removeTitle(it.type, it.id)
                     history = historyStore.entries()
