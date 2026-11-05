@@ -19,6 +19,9 @@ import java.net.URLEncoder
  */
 class StremioRepository(private val apiBase: String = "https://api.strem.io") {
 
+    /** When set, only this addon (its web address) supplies the Home lists. Search and streams still use every addon. */
+    @Volatile var catalogSource: String = ""
+
     /** How each addon did the last time streams were looked up, for the Addon health page. */
     val streamStats = java.util.concurrent.ConcurrentHashMap<String, StreamStat>()
 
@@ -262,7 +265,8 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
         /** Called each time another row arrives, with every row that has arrived so far (in list order). */
         onPartial: ((List<StremioRow>) -> Unit)? = null,
     ): List<StremioRow> = coroutineScope {
-        val jobs = addons.flatMap { a ->
+        val pool = addons.filter { catalogSource.isBlank() || it.baseUrl == catalogSource }.ifEmpty { addons }
+        val jobs = pool.flatMap { a ->
             a.catalogs
                 .filter { isShown(it.type) && !it.needsExtra }
                 .take(12)

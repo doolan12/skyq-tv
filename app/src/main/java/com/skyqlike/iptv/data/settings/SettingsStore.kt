@@ -29,6 +29,8 @@ data class AppSettings(
     val topPostersKey: String = "",
     /** The link or number of your own TMDB list for Kids profiles. */
     val kidsList: String = "",
+    /** The one addon whose lists fill Home. Empty means every addon. */
+    val catalogSource: String = "",
 )
 
 /** Saves settings on the device. */
@@ -50,6 +52,7 @@ class SettingsStore(context: Context) {
         tmdbKey = prefs.getString("tmdbKey", "") ?: "",
         topPostersKey = prefs.getString("topPostersKey", "") ?: "",
         kidsList = prefs.getString("kidsList", "") ?: "",
+        catalogSource = prefs.getString("catalogSource", "") ?: "",
     )
 
     fun save(s: AppSettings) {
@@ -68,6 +71,7 @@ class SettingsStore(context: Context) {
             .putString("tmdbKey", s.tmdbKey)
             .putString("topPostersKey", s.topPostersKey)
             .putString("kidsList", s.kidsList)
+            .putString("catalogSource", s.catalogSource)
             .apply()
     }
 }

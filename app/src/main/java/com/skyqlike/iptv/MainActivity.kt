@@ -117,6 +117,13 @@ private fun ReelApp(context: Context) {
     var settings by remember { mutableStateOf(settingsStore.load()) }
     var stremio by remember { mutableStateOf(stremioStore.load()) }
     var stremioState by remember { mutableStateOf<StremioState>(StremioState.Idle) }
+    stremioRepo.catalogSource = settings.catalogSource
+    // Remembered so the Settings choice still works while Home is reloading after a change.
+    var homeSourcesKept by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    (stremioState as? StremioState.Ready)?.home?.addons?.let { list ->
+        val found = list.filter { a -> a.catalogs.any { c -> (c.type == "movie" || c.type == "series") && !c.needsExtra } }.map { it.baseUrl to it.name }
+        if (found.isNotEmpty() && found != homeSourcesKept) homeSourcesKept = found
+    }
     var detail by remember { mutableStateOf<DetailRequest?>(null) }
     var showSettings by remember { mutableStateOf(false) }
     var showShuffle by remember { mutableStateOf(false) }
@@ -430,9 +437,15 @@ private fun ReelApp(context: Context) {
             showSettings -> SettingsScreen(
                 settings = settings,
                 onChange = {
+                    val sourceChanged = it.catalogSource != settings.catalogSource
                     settings = it
                     settingsStore.save(it)
+                    if (sourceChanged) {
+                        stremioRepo.catalogSource = it.catalogSource
+                        stremioState = StremioState.Idle
+                    }
                 },
+                homeSources = homeSourcesKept,
                 session = stremio,
                 actions = actions,
                 profileName = current.name,

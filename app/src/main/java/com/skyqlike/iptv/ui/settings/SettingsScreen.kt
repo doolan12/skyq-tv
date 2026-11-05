@@ -59,6 +59,8 @@ private val Languages = listOf(
 fun SettingsScreen(
     settings: AppSettings,
     onChange: (AppSettings) -> Unit,
+    /** Addons that supply lists of titles: (web address, name). */
+    homeSources: List<Pair<String, String>>,
     session: StremioSession,
     actions: StremioActions,
     profileName: String,
@@ -260,6 +262,22 @@ fun SettingsScreen(
                     }
                 }
             }
+        }
+        item {
+            val chosen = homeSources.firstOrNull { it.first == settings.catalogSource }
+            SettingRow("Home lists from", chosen?.second ?: "All addons") {
+                // Cycles: All addons, then each addon in turn.
+                val options = listOf("") + homeSources.map { it.first }
+                val next = options[(options.indexOf(settings.catalogSource).coerceAtLeast(0) + 1) % options.size]
+                onChange(settings.copy(catalogSource = next))
+            }
+        }
+        item {
+            Text(
+                "Choose one addon to fill Home, to avoid the same lists turning up from several addons. Search and playback still use all of them.",
+                fontSize = 13.sp,
+                color = Palette.TextSecondary,
+            )
         }
         item { SettingRow("Clear Continue Watching", "") { onClearHistory() } }
         item { SettingRow("Switch profile", "") { onSwitchProfile() } }
