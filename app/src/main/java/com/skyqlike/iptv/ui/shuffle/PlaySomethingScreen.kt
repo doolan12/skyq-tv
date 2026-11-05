@@ -317,22 +317,23 @@ private fun PickCard(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(if (item.type == "series") "SERIES" else "FILM", fontSize = 12.sp, color = Palette.Accent, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-            Text(item.name, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            MetaLine(item.year, item.runtime, item.rating, fontSize = 13.sp)
-            if (item.genres.isNotEmpty()) Text(item.genres.take(3).joinToString("  •  "), fontSize = 13.sp, color = Color(0xFFD0D0D8))
-            if (item.description.isNotBlank()) {
-                Text(item.description, fontSize = 13.sp, color = Color(0xFFC0C0C8), maxLines = 4, overflow = TextOverflow.Ellipsis)
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
+            Text(item.name, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = Color.White, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            // The buttons come straight after the title, so they're always on screen even on a short phone display.
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                 val ep = pick.episode
                 ActionButton(
                     if (ep != null) "Play S${ep.season} E${ep.episode}" else "Play",
-                    Modifier.width(if (ep != null) 150.dp else 100.dp),
+                    Modifier.weight(1f),
                     accent = true,
                     accentColor = Color.White,
                     textColor = Color.Black,
                 ) { if (ep != null) onPlayEpisode(item, ep.id) else onPlay(item) }
-                ActionButton("More Info", Modifier.width(120.dp)) { onInfo(item) }
+                ActionButton("More Info", Modifier.weight(1f)) { onInfo(item) }
+            }
+            MetaLine(item.year, item.runtime, item.rating, fontSize = 13.sp)
+            if (item.genres.isNotEmpty()) Text(item.genres.take(3).joinToString("  •  "), fontSize = 13.sp, color = Color(0xFFD0D0D8))
+            if (item.description.isNotBlank()) {
+                Text(item.description, fontSize = 13.sp, color = Color(0xFFC0C0C8), maxLines = 4, overflow = TextOverflow.Ellipsis)
             }
         }
     }
