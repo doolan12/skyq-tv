@@ -499,16 +499,18 @@ fun BrowseScreen(
             val addonNote = "${state.home.addons.size} addon(s) loaded: $names" +
                 if (state.home.failedAddons > 0) "  |  ${state.home.failedAddons} couldn't be reached" else ""
 
-            // The banner and top bar stay put at the top; only the rows underneath scroll.
-            BoxWithConstraints(Modifier.fillMaxSize()) {
-                val bannerHeight = (maxHeight * 0.42f).coerceIn(150.dp, 300.dp)
-                Column(Modifier.fillMaxSize()) {
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                state = ui.list,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = 40.dp),
+            ) {
+                item {
                     Box(Modifier.fillMaxWidth()) {
                         if (showBanner) {
                             val hero = focusedHero?.takeIf { browsing } ?: heroItems[heroIndex.coerceIn(0, heroItems.size - 1)]
                             Billboard(
                                 item = hero,
-                                height = bannerHeight,
                                 isFavourite = favourites.any { it.type == hero.type && it.id == hero.id },
                                 playFocus = playFocus,
                                 onPlay = { onPlay(hero) },
@@ -531,12 +533,7 @@ fun BrowseScreen(
                         }
                         TopBar(tab, selectTab, profile, onSettings, onSwitchProfile, onShuffle, Modifier.align(Alignment.TopStart))
                     }
-            LazyColumn(
-                Modifier.weight(1f).fillMaxWidth(),
-                state = ui.list,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 40.dp),
-            ) {
+                }
                 if (genreList.isNotEmpty()) {
                     item {
                         Row(
@@ -597,8 +594,6 @@ fun BrowseScreen(
                         color = Palette.TextSecondary,
                         modifier = Modifier.padding(horizontal = 48.dp, vertical = 8.dp),
                     )
-                }
-            }
                 }
             }
         }
@@ -688,7 +683,6 @@ private fun NavItem(label: String, selected: Boolean, width: Dp, fontSize: TextU
 @Composable
 private fun Billboard(
     item: StremioItem,
-    height: Dp,
     isFavourite: Boolean,
     playFocus: FocusRequester,
     onPlay: () -> Unit,
@@ -702,11 +696,8 @@ private fun Billboard(
     onPreviewStopped: () -> Unit,
     onPreviewFailed: () -> Unit,
 ) {
-    // A short banner (a phone on its side) drops the extra lines so the title and buttons still fit.
-    val tight = height < 200.dp
-    val medium = height < 260.dp
     Box(
-        Modifier.fillMaxWidth().height(height).pointerInput(heroCount, heroPos) {
+        Modifier.fillMaxWidth().height(340.dp).pointerInput(heroCount, heroPos) {
             var drag = 0f
             detectHorizontalDragGestures(
                 onDragStart = { drag = 0f },
@@ -747,7 +738,7 @@ private fun Billboard(
         // Carousel controls: back, dots showing which title this is, forward. Swiping the banner works too.
         if (heroCount > 1) {
             Row(
-                Modifier.align(Alignment.BottomEnd).padding(end = 40.dp, bottom = if (tight) 8.dp else 22.dp),
+                Modifier.align(Alignment.BottomEnd).padding(end = 40.dp, bottom = 22.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -764,40 +755,32 @@ private fun Billboard(
             }
         }
         Column(
-            Modifier.align(Alignment.CenterStart).fillMaxWidth(0.5f).padding(start = 48.dp, top = if (tight) 50.dp else 56.dp),
+            Modifier.align(Alignment.CenterStart).fillMaxWidth(0.5f).padding(start = 48.dp, top = 56.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (!tight && !medium) {
-                Text(
-                    if (item.type == "series") "SERIES" else "FILM",
-                    fontSize = 13.sp,
-                    color = Palette.Accent,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 2.sp,
-                )
-            }
+            Text(
+                if (item.type == "series") "SERIES" else "FILM",
+                fontSize = 13.sp,
+                color = Palette.Accent,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 2.sp,
+            )
             Text(
                 item.name,
-                fontSize = if (tight) 26.sp else if (medium) 30.sp else 38.sp,
+                fontSize = 38.sp,
                 fontWeight = FontWeight.ExtraBold,
                 color = Color.White,
-                maxLines = if (tight) 1 else 2,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (!tight) MetaLine(item.year, "", item.rating, fontSize = 14.sp)
-            if (!tight && !medium && item.genres.isNotEmpty()) {
+            MetaLine(item.year, "", item.rating, fontSize = 14.sp)
+            if (item.genres.isNotEmpty()) {
                 Text(item.genres.take(3).joinToString("  •  "), fontSize = 14.sp, color = Color(0xFFD0D0D8))
             }
-            if (!tight && item.description.isNotBlank()) {
-                Text(
-                    item.description,
-                    fontSize = if (medium) 12.sp else 14.sp,
-                    color = Color(0xFFC0C0C8),
-                    maxLines = if (medium) 2 else 3,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            if (item.description.isNotBlank()) {
+                Text(item.description, fontSize = 14.sp, color = Color(0xFFC0C0C8), maxLines = 3, overflow = TextOverflow.Ellipsis)
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = if (tight) 0.dp else 6.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 6.dp)) {
                 ActionButton(
                     "Play",
                     Modifier.width(120.dp).focusRequester(playFocus),
