@@ -317,7 +317,10 @@ fun BrowseScreen(
             val toggle: (StremioItem) -> Unit = { actions.onToggleFavourite(it) }
             val rails = ArrayList<RailSpec>()
 
+            // Every title already shown on this screen, so later rows don't repeat it.
+            val shownKeys = HashSet<String>()
             fun add(title: String, items: List<StremioItem>, w: Dp = 130.dp, h: Dp = 195.dp) {
+                items.forEach { shownKeys += it.type + ":" + it.id }
                 if (items.isNotEmpty()) rails += RailSpec(Rail(title, items.map { tileFor(it, onOpen, toggle, topPostersKey, onHeroFocus) }), w, h)
             }
 
@@ -331,6 +334,7 @@ fun BrowseScreen(
                 val word = if (rowType == "movie") "Movies" else "Series"
                 val live = (if (rowType == "movie") trending?.movies else trending?.series).orEmpty().take(10)
                 if (live.size >= 5) {
+                    live.forEach { shownKeys += it.type + ":" + it.id }
                     rails += RailSpec(Rail("Trending $word Today", live.map { tileFor(it, onOpen, toggle, topPostersKey, onHeroFocus) }), 130.dp, 195.dp, top10 = true)
                     return
                 }
@@ -338,6 +342,7 @@ fun BrowseScreen(
                 val items = first.items.filter { !it.poster.isNullOrBlank() }.take(10)
                 if (items.size < 5) return
                 usedForTop10 += first
+                items.forEach { shownKeys += it.type + ":" + it.id }
                 rails += RailSpec(Rail("Popular $word", items.map { tileFor(it, onOpen, toggle, topPostersKey, onHeroFocus) }), 130.dp, 195.dp, top10 = true)
             }
 
@@ -419,6 +424,22 @@ fun BrowseScreen(
                 }
             }
 
+            // Tidies a list of rows so Home isn't the same posters over and over: a title that already
+            // appeared higher up is left out of later rows, and a row left with too little new is dropped
+            // (that is how two addons' "Popular" lists, or a list that duplicates the Trending row, collapse into one).
+            fun tidy(rows: List<StremioRow>, maxRows: Int): List<StremioRow> {
+                val out = ArrayList<StremioRow>()
+                for (r in rows) {
+                    if (out.size >= maxRows) break
+                    val fresh = r.items.filter { (it.type + ":" + it.id) !in shownKeys }.distinctBy { it.id }
+                    // Small lists are kept only if they're mostly new.
+                    if (fresh.size < minOf(6, r.items.size) || fresh.size * 2 < r.items.size) continue
+                    fresh.forEach { shownKeys += it.type + ":" + it.id }
+                    out += r.copy(items = fresh)
+                }
+                return out
+            }
+
             val hits = results
             when {
                 tab == TAB_SEARCH -> if (searching && hits != null) {
@@ -481,16 +502,18 @@ fun BrowseScreen(
                     val movieRows = state.home.rows.filter { it.type == "movie" && notTop10(it) }
                     val seriesRows = state.home.rows.filter { it.type == "series" && notTop10(it) }
                     // Series and movie rows take turns, so Home has a bit of everything.
+                    val mixed = ArrayList<StremioRow>()
                     for (i in 0 until maxOf(movieRows.size, seriesRows.size)) {
-                        seriesRows.getOrNull(i)?.let { add(it.title, it.items) }
-                        movieRows.getOrNull(i)?.let { add(it.title, it.items) }
+                        seriesRows.getOrNull(i)?.let { mixed += it }
+                        movieRows.getOrNull(i)?.let { mixed += it }
                     }
+                    tidy(mixed, 16).forEach { add(it.title, it.items) }
                 }
                 else -> {
                     addContinue(type)
                     if (type == "series") addTop10("series")
                     if (type == "movie") addTop10("movie")
-                    state.home.rows.filter { it.type == type && notTop10(it) }.forEach { row: StremioRow -> add(row.title, row.items) }
+                    tidy(state.home.rows.filter { it.type == type && notTop10(it) }, 22).forEach { row: StremioRow -> add(row.title, row.items) }
                 }
             }
 
