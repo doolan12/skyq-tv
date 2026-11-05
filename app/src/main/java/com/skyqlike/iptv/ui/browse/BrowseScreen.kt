@@ -347,7 +347,11 @@ fun BrowseScreen(
                         imageUrl = found.poster,
                         progress = if (e.durationMs > 0) e.positionMs.toFloat() / e.durationMs else null,
                         onLongClick = { onRemoveContinue(found) },
-                    ) { onOpen(found) }
+                    ) {
+                        // Straight back into it: the episode you were on, or the movie, and it resumes where you stopped.
+                        val epId = e.key.substringAfter('|', "")
+                        if (found.type == "series" && epId.isNotEmpty()) onOpenEpisode(found, epId) else onPlay(found)
+                    }
                 }
                 if (filterType == null || filterType == "series") {
                     upNext.forEach { u ->
