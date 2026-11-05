@@ -22,11 +22,13 @@ jobs:
       - name: Set up permanent signing key (if the secrets exist)
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
           if [ -n "$KEYSTORE_B64" ]; then
             echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/reelhouse.keystore"
             echo "KEYSTORE_FILE=$RUNNER_TEMP/reelhouse.keystore" >> "$GITHUB_ENV"
             echo "Using the permanent signing key."
+            echo "DIAG key file bytes: $(wc -c < "$RUNNER_TEMP/reelhouse.keystore")  secret chars: ${#KEYSTORE_B64}  password chars: ${#KEYSTORE_PASSWORD}"
           else
             echo "No signing key secret found - using the default debug key."
           fi
