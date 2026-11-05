@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -167,7 +168,10 @@ fun BrowseScreen(
         heroIndex = 0
     }
 
-    // Searches a moment after you stop typing.
+    val recentStore = remember { com.skyqlike.iptv.data.settings.RecentSearchStore(androidx.compose.ui.platform.LocalContext.current) }
+    var recent by remember { mutableStateOf(recentStore.load()) }
+
+    // Searches a moment after you stop typing, and remembers the search once you've paused on it with results.
     LaunchedEffect(ui.query) {
         val q = ui.query.trim()
         if (q.length < 2) {
@@ -176,6 +180,10 @@ fun BrowseScreen(
             results = null
             delay(500)
             results = runCatching { actions.search(q) }.getOrDefault(emptyList())
+            if (!results.isNullOrEmpty()) {
+                delay(1_500)
+                recent = recentStore.add(q)
+            }
         }
     }
     // Fetches the chosen genre from the addons whenever the genre or the tab changes.
@@ -567,6 +575,20 @@ fun BrowseScreen(
                 }
                 if (tab == TAB_SEARCH && !searching) {
                     item { Note("Type at least 2 letters to search all your addons.") }
+                    if (recent.isNotEmpty()) {
+                        item { Note("Recent searches") }
+                        item {
+                            androidx.compose.foundation.lazy.LazyRow(
+                                contentPadding = PaddingValues(horizontal = 48.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                items(recent.size) { i ->
+                                    ActionButton(recent[i], Modifier.widthIn(min = 110.dp, max = 260.dp)) { ui.query = recent[i] }
+                                }
+                                item { ActionButton("Clear", Modifier.width(100.dp)) { recentStore.clear(); recent = emptyList() } }
+                            }
+                        }
+                    }
                 } else if (tab == TAB_SEARCH && hits == null) {
                     item { Note("Searching...") }
                 } else if (browsing && ui.genre != null && genreRows == null) {
