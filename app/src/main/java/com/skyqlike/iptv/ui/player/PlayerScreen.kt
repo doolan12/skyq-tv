@@ -14,6 +14,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -81,6 +82,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Text
+import kotlin.math.roundToInt
 import com.skyqlike.iptv.data.intro.IntroRepository
 import com.skyqlike.iptv.data.intro.SkipSegment
 import com.skyqlike.iptv.data.model.PlayItem
@@ -92,6 +94,10 @@ import kotlinx.coroutines.launch
 import java.util.Locale
 
 private const val MAX_RETRIES = 5
+
+private val SpeedChoices = listOf(0.75f, 1f, 1.25f, 1.5f, 2f)
+
+private fun speedLabel(v: Float) = (if (v % 1f == 0f) v.toInt().toString() else v.toString()) + "x"
 private val ResizeModes = intArrayOf(
     AspectRatioFrameLayout.RESIZE_MODE_FIT,
     AspectRatioFrameLayout.RESIZE_MODE_ZOOM,
@@ -420,6 +426,43 @@ fun PlayerScreen(
         if (exo.playWhenReady) exo.pause() else exo.play()
     }
 
+    // Touch controls: double-tap to skip, swipe for brightness and volume, plus speed and pop-out.
+    val activity = remember(context) {
+        var c = context
+        while (c is android.content.ContextWrapper && c !is android.app.Activity) c = c.baseContext
+        c as? android.app.Activity
+    }
+    val audio = remember(context) { context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager }
+    var hud by remember { mutableStateOf<String?>(null) }
+    var hudTick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(hudTick) {
+        if (hudTick > 0) {
+            delay(900)
+            hud = null
+        }
+    }
+    fun showHud(text: String) {
+        hud = text
+        hudTick++
+    }
+    val brightness = remember { floatArrayOf(-1f) }
+    val volumeFrac = remember { floatArrayOf(0f) }
+    var speedIndex by remember { mutableIntStateOf(1) }
+    val canPop = remember {
+        android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O &&
+            context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)
+    }
+    // Hand the screen brightness back to the phone's own setting when leaving the player.
+    DisposableEffect(Unit) {
+        onDispose {
+            activity?.window?.let { w ->
+                val a = w.attributes
+                a.screenBrightness = android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                w.attributes = a
+            }
+        }
+    }
+
     // When it ends: remember it as finished and show the controls.
     LaunchedEffect(endedTick) {
         if (endedTick > 0) {
@@ -489,12 +532,70 @@ fun PlayerScreen(
             Modifier
                 .fillMaxSize()
                 .pointerInput(Unit) {
-                    detectTapGestures(onTap = {
-                        overlay = !overlay
-                        overlayTick++
-                    })
+                    detectTapGestures(
+                        onTap = {
+                            overlay = !overlay
+                            overlayTick++
+                        },
+                        // Double-tap the left side to go back 10 seconds, the right side to go forward, the middle to pause.
+                        onDoubleTap = { o ->
+                            val w = size.width
+                            when {
+                                o.x < w * 0.4f -> if (seekBy(-10_000)) showHud("-10s")
+                                o.x > w * 0.6f -> if (seekBy(10_000)) showHud("+10s")
+                                else -> togglePlay()
+                            }
+                        },
+                    )
+                }
+                // Swipe up or down: the left half is brightness, the right half is volume.
+                .pointerInput(Unit) {
+                    var leftSide = true
+                    detectVerticalDragGestures(
+                        onDragStart = { o ->
+                            leftSide = o.x < size.width / 2f
+                            if (brightness[0] < 0f) {
+                                brightness[0] = activity?.window?.attributes?.screenBrightness?.takeIf { it >= 0f } ?: 0.5f
+                            }
+                            val max = audio.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+                            volumeFrac[0] = audio.getStreamVolume(android.media.AudioManager.STREAM_MUSIC).toFloat() / max
+                        },
+                        onVerticalDrag = { change, dy ->
+                            change.consume()
+                            val delta = -dy / size.height * 1.4f
+                            if (leftSide) {
+                                brightness[0] = (brightness[0] + delta).coerceIn(0.03f, 1f)
+                                activity?.window?.let { w ->
+                                    val a = w.attributes
+                                    a.screenBrightness = brightness[0]
+                                    w.attributes = a
+                                }
+                                showHud("Brightness ${(brightness[0] * 100).toInt()}%")
+                            } else {
+                                volumeFrac[0] = (volumeFrac[0] + delta).coerceIn(0f, 1f)
+                                val max = audio.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
+                                audio.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, (volumeFrac[0] * max).roundToInt(), 0)
+                                showHud("Volume ${(volumeFrac[0] * 100).toInt()}%")
+                            }
+                        },
+                    )
                 }
         )
+
+        // Small message in the middle-top: "+10s", "Volume 60%" and so on.
+        hud?.let { text ->
+            Text(
+                text,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 28.dp)
+                    .background(Color(0xAA000000), RoundedCornerShape(20.dp))
+                    .padding(horizontal = 18.dp, vertical = 8.dp),
+            )
+        }
 
         // Skip Intro / Skip Recap, shown while that part is playing.
         if (activeSkip != null && picker == null && !failed) {
@@ -625,6 +726,23 @@ fun PlayerScreen(
                     PlayerButton("Size: ${ResizeLabels[resizeIndex]}", Modifier.width(150.dp)) {
                         bump()
                         resizeIndex = (resizeIndex + 1) % ResizeModes.size
+                    }
+                    PlayerButton("Speed: ${speedLabel(SpeedChoices[speedIndex])}", Modifier.width(150.dp)) {
+                        bump()
+                        speedIndex = (speedIndex + 1) % SpeedChoices.size
+                        exo.setPlaybackSpeed(SpeedChoices[speedIndex])
+                    }
+                    if (canPop) {
+                        PlayerButton("Pop out", Modifier.width(110.dp)) {
+                            overlay = false
+                            runCatching {
+                                activity?.enterPictureInPictureMode(
+                                    android.app.PictureInPictureParams.Builder()
+                                        .setAspectRatio(android.util.Rational(16, 9))
+                                        .build()
+                                )
+                            }
+                        }
                     }
                 }
             }
