@@ -537,7 +537,7 @@ fun BrowseScreen(
                 }
                 all.distinctBy { it.lowercase() }.take(40)
             }
-            val showBanner = browsing && ui.genre == null && heroItems.isNotEmpty()
+            val showBanner = false // banner removed: rows start straight under the tabs
 
             // On a TV the banner and top bar stay put and only the rows underneath scroll, so the banner is always
             // visible (and follows the poster you're on). On a phone the banner scrolls away with the page.
@@ -710,14 +710,6 @@ fun BrowseScreen(
                                 content = listBody,
                             )
                         }
-                        // Rows fade in as they slide up under the banner, instead of being cut off by a hard line.
-                        Box(
-                            Modifier
-                                .offset(y = bannerHeight)
-                                .fillMaxWidth()
-                                .height(36.dp)
-                                .background(Brush.verticalGradient(listOf(Palette.Background, Color.Transparent))),
-                        )
                     }
                 }
             } else {
