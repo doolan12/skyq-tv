@@ -19,7 +19,21 @@ jobs:
         with:
           gradle-version: 8.9
 
+      - name: Set up permanent signing key (if the secrets exist)
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/reelhouse.keystore"
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/reelhouse.keystore" >> "$GITHUB_ENV"
+            echo "Using the permanent signing key."
+          else
+            echo "No signing key secret found - using the default debug key."
+          fi
+
       - name: Build debug APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
           set -o pipefail
           gradle assembleDebug --no-daemon --console=plain 2>&1 | tee build.log

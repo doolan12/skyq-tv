@@ -16,7 +16,26 @@ android {
         versionName = "2.0.0"
     }
 
+    // A permanent signing key, so new versions install over the old one.
+    // It only switches on when the build has the key file and password (GitHub secrets); otherwise the default debug key is used.
+    val keystorePath = System.getenv("KEYSTORE_FILE")
+    val keystorePass = System.getenv("KEYSTORE_PASSWORD")
+    val useOwnKey = !keystorePath.isNullOrBlank() && !keystorePass.isNullOrBlank() && file(keystorePath).exists()
+    if (useOwnKey) {
+        signingConfigs {
+            create("reelhouse") {
+                storeFile = file(keystorePath!!)
+                storePassword = keystorePass
+                keyAlias = "reelhouse"
+                keyPassword = keystorePass
+            }
+        }
+    }
+
     buildTypes {
+        if (useOwnKey) {
+            getByName("debug") { signingConfig = signingConfigs.getByName("reelhouse") }
+        }
         release {
             isMinifyEnabled = false
         }
