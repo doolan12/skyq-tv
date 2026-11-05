@@ -86,7 +86,6 @@ import kotlin.math.roundToInt
 import com.skyqlike.iptv.data.intro.IntroRepository
 import com.skyqlike.iptv.data.intro.SkipSegment
 import com.skyqlike.iptv.data.model.PlayItem
-import com.skyqlike.iptv.data.settings.LearnedIntroStore
 import com.skyqlike.iptv.data.settings.TrackPrefsStore
 import com.skyqlike.iptv.data.model.PlayKind
 import com.skyqlike.iptv.ui.common.FocusTile
@@ -161,7 +160,6 @@ fun PlayerScreen(
     val token = remember { intArrayOf(0) }
     val startedOk = remember { booleanArrayOf(false) }
     val trackPrefs = remember { TrackPrefsStore(context) }
-    val learnedIntros = remember { LearnedIntroStore(context) }
     val triedUrls = remember { HashSet<String>() }
     val alternates by rememberUpdatedState(alternatesFor)
 
@@ -390,17 +388,7 @@ fun PlayerScreen(
     LaunchedEffect(index) {
         segments = emptyList()
         if (skipIntroOn) segments = introRepo.segmentsFor(playlist[index].externalId)
-        // Nothing in the database? Use the intro length learned from an earlier episode of this show.
-        if (skipIntroOn && segments.isEmpty()) {
-            val showId = playlist[index].externalId?.substringBefore(':')
-            val learned = showId?.let { learnedIntros.get(it) }
-            if (learned != null) segments = listOf(SkipSegment("Skip Intro", learned.first, learned.second))
-        }
     }
-    val currentEpisodeId = playlist[index].externalId
-    val isEpisodeOfShow = currentEpisodeId?.split(':')?.size == 3
-    // For episodes with no known intro, offer a jump ahead in the first minutes, and remember it for the next episode.
-    val showGuess = skipIntroOn && isEpisodeOfShow && segments.isEmpty() && positionMs < 6 * 60_000L && picker == null && !failed
     val activeSkip = segments.firstOrNull { positionMs >= it.startMs - 1_000 && positionMs < it.endMs - 1_000 }
 
     val rootFocus = remember { FocusRequester() }
@@ -642,23 +630,6 @@ fun PlayerScreen(
             ) {
                 exo.seekTo(activeSkip.endMs)
                 positionMs = activeSkip.endMs
-            }
-        }
-
-        // No intro times known: a plain jump ahead that the app remembers for the rest of the show.
-        if (showGuess && activeSkip == null && !showUpNext) {
-            PlayerButton(
-                if (overlay) "Skip ahead 80s" else "Skip ahead 80s  (press OK)",
-                Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 40.dp, bottom = if (overlay) 190.dp else 60.dp)
-                    .width(if (overlay) 210.dp else 290.dp),
-            ) {
-                val from = positionMs
-                val to = (from + 80_000L).coerceAtMost(exo.duration.takeIf { it > 0 } ?: Long.MAX_VALUE)
-                currentEpisodeId?.substringBefore(':')?.let { learnedIntros.put(it, from, to) }
-                exo.seekTo(to)
-                positionMs = to
             }
         }
 
