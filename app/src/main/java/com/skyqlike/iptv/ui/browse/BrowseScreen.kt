@@ -168,7 +168,8 @@ fun BrowseScreen(
         heroIndex = 0
     }
 
-    val recentStore = remember { com.skyqlike.iptv.data.settings.RecentSearchStore(androidx.compose.ui.platform.LocalContext.current) }
+    val searchContext = androidx.compose.ui.platform.LocalContext.current
+    val recentStore = remember { com.skyqlike.iptv.data.settings.RecentSearchStore(searchContext) }
     var recent by remember { mutableStateOf(recentStore.load()) }
 
     // Searches a moment after you stop typing, and remembers the search once you've paused on it with results.
