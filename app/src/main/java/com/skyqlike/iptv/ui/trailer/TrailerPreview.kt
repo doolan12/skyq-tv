@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 
 /**
@@ -39,6 +40,8 @@ fun TrailerPreview(
     onEnded: () -> Unit,
     onFailed: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val appOrigin = remember(context) { "https://" + context.packageName }
     val safeId = remember(videoId) { videoId.filter { it.isLetterOrDigit() || it == '_' || it == '-' } }
     val playingCb by rememberUpdatedState(onPlaying)
     val endedCb by rememberUpdatedState(onEnded)
@@ -46,18 +49,18 @@ fun TrailerPreview(
     var playing by remember(safeId) { mutableStateOf(false) }
     val alpha by animateFloatAsState(if (playing) 1f else 0f, tween(900), label = "previewFade")
 
-    val html = remember(safeId) {
+    val html = remember(safeId, appOrigin) {
         """
         <!DOCTYPE html><html><head>
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <meta name="referrer" content="strict-origin">
+        <meta name="referrer" content="strict-origin-when-cross-origin">
         <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#p{width:100%;height:100%;pointer-events:none}</style>
         </head><body><div id="p"></div>
         <script src="https://www.youtube.com/iframe_api"></script>
         <script>
         function onYouTubeIframeAPIReady(){
           new YT.Player('p',{width:'100%',height:'100%',videoId:'$safeId',
-            playerVars:{autoplay:1,mute:1,controls:0,disablekb:1,rel:0,playsinline:1,fs:0,modestbranding:1,iv_load_policy:3,origin:'https://www.youtube.com'},
+            playerVars:{autoplay:1,mute:1,controls:0,disablekb:1,rel:0,playsinline:1,fs:0,modestbranding:1,iv_load_policy:3,origin:'$appOrigin'},
             events:{
               onReady:function(e){e.target.mute();e.target.playVideo();},
               onError:function(e){Reel.failed(String(e.data));},
@@ -128,7 +131,7 @@ fun TrailerPreview(
                             }
                         }
                     }, "Reel")
-                    loadDataWithBaseURL("https://www.youtube.com", html, "text/html", "utf-8", null)
+                    loadDataWithBaseURL(appOrigin, html, "text/html", "utf-8", null)
                     webView = this
                 }
             },
