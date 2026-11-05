@@ -469,7 +469,7 @@ private fun ReelApp(context: Context) {
                 actions = actions,
                 isFavourite = favourites.any { it.type == opened.item.type && it.id == opened.item.id },
                 autoPlay = opened.autoPlay,
-                quickPlay = settings.quickPlay,
+                quickPlay = settings.quickPlay || opened.autoPlay || opened.episodeId != null,
                 autoEpisodeId = opened.episodeId,
                 episodeState = { ep ->
                     history.firstOrNull { it.key == "stremio:series:${opened.item.id}|${ep.id}" }?.let {
