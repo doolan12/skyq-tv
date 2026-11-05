@@ -220,29 +220,11 @@ fun BrowseScreen(
         val h = heroNow ?: return@LaunchedEffect
         val k = heroKey ?: return@LaunchedEffect
         if (!previewsOn || k in trailerIds || k in previewFailed) return@LaunchedEffect
-        delay(2000)
+        delay(1200)
         val id = h.trailerId ?: runCatching { actions.loadDetails(h).trailerId }.getOrNull()
         if (id != null) trailerIds[k] = id else previewFailed += k
     }
-    // Every banner title gets its turn: about 25 seconds of trailer, or a few seconds if it has none.
-    LaunchedEffect(heroKey, previewPlaying, tab, previewsOn, focusedHero) {
-        if (heroItems.size > 1 && focusedHero == null) {
-            val waitingForTrailer = previewsOn && heroKey != null && heroKey in trailerIds && heroKey !in previewFailed
-            delay(if (previewPlaying) 25_000L else if (waitingForTrailer) 14_000L else 9_000L)
-            heroIndex = (heroIndex + 1) % heroItems.size
-        }
-    }
-    // Looks up every banner title's trailer ahead of time, so the next one is ready as soon as it appears.
-    LaunchedEffect(heroItems.map { it.type + ":" + it.id }, previewsOn) {
-        if (!previewsOn) return@LaunchedEffect
-        delay(1500)
-        for (h in heroItems) {
-            val k = h.type + ":" + h.id
-            if (k in trailerIds || k in previewFailed) continue
-            val id = h.trailerId ?: runCatching { actions.loadDetails(h).trailerId }.getOrNull()
-            if (id != null) trailerIds[k] = id else previewFailed += k
-        }
-    }
+    // The banner stays on the title you're on (or the first suggestion) and plays that title's trailer.
 
     // The remote starts on the Play button, like a streaming app.
     LaunchedEffect(ready != null, tab) {
@@ -571,8 +553,8 @@ fun BrowseScreen(
                                 onInfo = { onOpen(hero) },
                                 onFavourite = { toggle(hero) },
                                 previewId = if (previewsOn && heroKey != null && heroKey !in previewFailed) trailerIds[heroKey] else null,
-                                heroCount = heroItems.size,
-                                heroPos = heroIndex.coerceIn(0, heroItems.size - 1),
+                                heroCount = 1,
+                                heroPos = 0,
                                 onHeroJump = {
                                     focusedHero = null
                                     heroIndex = it.coerceIn(0, heroItems.size - 1)
