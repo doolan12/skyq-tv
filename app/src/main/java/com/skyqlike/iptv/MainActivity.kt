@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import com.skyqlike.iptv.data.history.WatchHistoryStore
 import com.skyqlike.iptv.data.Http
+import com.skyqlike.iptv.data.model.ExternalSubtitle
 import com.skyqlike.iptv.data.model.PlayItem
 import com.skyqlike.iptv.data.model.PlayKind
 import com.skyqlike.iptv.data.profile.Profile
@@ -53,6 +54,8 @@ import com.skyqlike.iptv.ui.stremio.StremioActions
 import com.skyqlike.iptv.ui.theme.Palette
 import com.skyqlike.iptv.ui.theme.ReelTheme
 import java.io.File
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -108,6 +111,7 @@ private fun ReelApp(context: Context) {
     // Saved copies of addon pages, so Home can appear instantly next time.
     remember(context) { Http.cacheDir = File(context.cacheDir, "http"); true }
     val loadGen = remember { intArrayOf(0) }
+    val subtitleJobs = remember { HashMap<String, Deferred<List<ExternalSubtitle>>>() }
 
     // Each profile has its own Continue Watching and My List.
     val current = profile
@@ -240,9 +244,13 @@ private fun ReelApp(context: Context) {
             val addons = (stremioState as? StremioState.Ready)?.home?.addons ?: emptyList()
             stremioRepo.details(addons, title)
         },
-        loadStreams = { type, videoId ->
+        loadStreams = { type, videoId, onUpdate ->
             val addons = (stremioState as? StremioState.Ready)?.home?.addons ?: emptyList()
-            stremioRepo.streams(addons, type, videoId)
+            // Look for subtitles at the same time as the streams, so playing doesn't wait for them afterwards.
+            subtitleJobs.getOrPut("$type|$videoId") {
+                scope.async { runCatching { stremioRepo.subtitles(addons, type, videoId) }.getOrDefault(emptyList()) }
+            }
+            stremioRepo.streams(addons, type, videoId, onUpdate)
         },
         onPlay = { title, video, stream ->
             val addons = (stremioState as? StremioState.Ready)?.home?.addons ?: emptyList()
@@ -275,14 +283,13 @@ private fun ReelApp(context: Context) {
             }
             val canFind = addons.any { it.supports("subtitles", subType, videoId) }
             scope.launch {
-                // Ask subtitle addons (like OpenSubtitles) for files; never wait more than a few seconds.
-                if (canFind) note = "Finding subtitles..."
-                val subs = if (canFind) {
-                    runCatching {
-                        withTimeoutOrNull(6000L) { stremioRepo.subtitles(addons, subType, videoId) }
-                    }.getOrNull() ?: emptyList()
-                } else emptyList()
-                if (canFind) note = null
+                // Subtitles were already being fetched while the streams loaded; wait only briefly for them.
+                val job = if (canFind) subtitleJobs.getOrPut("$subType|$videoId") {
+                    scope.async { runCatching { stremioRepo.subtitles(addons, subType, videoId) }.getOrDefault(emptyList()) }
+                } else null
+                if (job != null && !job.isCompleted) note = "Finding subtitles..."
+                val subs = if (job != null) withTimeoutOrNull(3500L) { job.await() } ?: emptyList() else emptyList()
+                if (job != null) note = null
                 playRequest = PlayRequest(
                     listOf(
                         PlayItem(

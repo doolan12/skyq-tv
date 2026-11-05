@@ -391,16 +391,22 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
      * Asks every addon that can give streams for this title.
      * [videoId] is the movie's id, or for an episode its episode id like tt0944947:1:1.
      */
-    suspend fun streams(addons: List<StremioAddon>, type: String, videoId: String): StremioStreams =
-        withContext(Dispatchers.IO) {
-            val targets = addons.filter { it.supports("stream", type, videoId) }
-            val results = coroutineScope {
-                targets.map { a -> async { runCatching { fetchStreams(a, type, videoId) } } }.awaitAll()
-            }
+    suspend fun streams(
+        addons: List<StremioAddon>,
+        type: String,
+        videoId: String,
+        /** Called each time another addon answers, with everything found so far (best first). */
+        onUpdate: ((StremioStreams) -> Unit)? = null,
+    ): StremioStreams = withContext(Dispatchers.IO) {
+        val targets = addons.filter { it.supports("stream", type, videoId) }
+        val gathered = ArrayList<Result<Pair<List<StremioStream>, Int>>>()
+
+        // Must be called while holding the lock on [gathered].
+        fun build(): StremioStreams {
             val playable = ArrayList<StremioStream>()
             var torrents = 0
             var failed = 0
-            for (r in results) {
+            for (r in gathered) {
                 val pair = r.getOrNull()
                 if (pair == null) {
                     failed++
@@ -410,8 +416,23 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
                 }
             }
             // Best first, so quick play (and the top of the list) picks the most watchable one.
-            StremioStreams(playable.sortedByDescending { score(it) }, torrents, failed)
+            return StremioStreams(playable.sortedByDescending { score(it) }, torrents, failed)
         }
+
+        coroutineScope {
+            targets.map { a ->
+                async {
+                    val r = runCatching { fetchStreams(a, type, videoId) }
+                    val snapshot = synchronized(gathered) {
+                        gathered += r
+                        build()
+                    }
+                    onUpdate?.invoke(snapshot)
+                }
+            }.awaitAll()
+        }
+        synchronized(gathered) { build() }
+    }
 
     /**
      * A rough "how good is this link" score from its name and description.

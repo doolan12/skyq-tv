@@ -4,6 +4,12 @@ package com.skyqlike.iptv.ui.player
 
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -18,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -40,6 +47,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
@@ -65,6 +74,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -142,7 +152,12 @@ fun PlayerScreen(
             .setAllowCrossProtocolRedirects(true)
             .setConnectTimeoutMs(15_000)
             .setReadTimeoutMs(15_000)
+        // Starts playing after 1.5s of video instead of the 2.5s default, and keeps up to a minute buffered.
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(15_000, 60_000, 1_500, 3_000)
+            .build()
         ExoPlayer.Builder(context)
+            .setLoadControl(loadControl)
             .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(http))
             .build()
             .also { player ->
@@ -493,15 +508,19 @@ fun PlayerScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text(
-                    statusMessage ?: "Buffering...",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
-                    modifier = Modifier
-                        .background(Color(0xAA000000), RoundedCornerShape(12.dp))
-                        .padding(horizontal = 18.dp, vertical = 10.dp),
-                )
+                // Netflix-style spinning circle while loading.
+                if (buffering && !failed) BufferingSpinner()
+                statusMessage?.let { msg ->
+                    Text(
+                        msg,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                        modifier = Modifier
+                            .background(Color(0xAA000000), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 18.dp, vertical = 10.dp),
+                    )
+                }
                 if (failed) {
                     PlayerButton("Try again", Modifier.width(150.dp), accent = true) {
                         attempts[0] = 0
@@ -685,4 +704,25 @@ private fun trackLabel(format: Format, number: Int): String {
         ?.let { Locale.forLanguageTag(it).displayLanguage }
         ?.takeIf { it.isNotBlank() }
     return format.label ?: language ?: "Track $number"
+}
+
+/** A red arc that spins round and round, like the buffering circle on Netflix. */
+@Composable
+private fun BufferingSpinner(size: androidx.compose.ui.unit.Dp = 64.dp) {
+    val transition = rememberInfiniteTransition(label = "spinner")
+    val angle by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(durationMillis = 900, easing = LinearEasing)),
+        label = "angle",
+    )
+    Canvas(Modifier.size(size)) {
+        val stroke = 6.dp.toPx()
+        val inset = stroke / 2
+        val arcSize = androidx.compose.ui.geometry.Size(this.size.width - stroke, this.size.height - stroke)
+        val topLeft = androidx.compose.ui.geometry.Offset(inset, inset)
+        // A faint full ring behind, and the bright red arc on top.
+        drawArc(Color(0x33FFFFFF), 0f, 360f, false, topLeft, arcSize, style = Stroke(stroke))
+        drawArc(Palette.Accent, angle, 100f, false, topLeft, arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
+    }
 }

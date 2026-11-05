@@ -25,6 +25,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -39,6 +40,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import com.skyqlike.iptv.data.stremio.StremioItem
 import com.skyqlike.iptv.data.stremio.StremioStreams
 import com.skyqlike.iptv.data.stremio.StremioVideo
@@ -228,21 +231,40 @@ private fun StreamPicker(item: StremioItem, pick: Pick, actions: StremioActions,
     var result by remember(videoId) { mutableStateOf<StremioStreams?>(null) }
     // Starts the first stream only once, so coming back from the player shows the list instead of replaying.
     var autoDone by remember(videoId) { mutableStateOf(false) }
+    var done by remember(videoId) { mutableStateOf(false) }
+    var grace by remember(videoId) { mutableStateOf(false) }
+    var focusedOnce by remember(videoId) { mutableStateOf(false) }
     val firstFocus = remember { FocusRequester() }
+    val uiScope = rememberCoroutineScope()
 
+    // Streams show up as each addon answers; the full list keeps filling in behind the scenes.
     LaunchedEffect(videoId) {
-        result = runCatching { actions.loadStreams(item.type, videoId) }
+        result = runCatching { actions.loadStreams(item.type, videoId) { partial -> uiScope.launch { result = partial } } }
             .getOrDefault(StremioStreams(emptyList(), 0, 1))
+        done = true
     }
     val r = result
-    LaunchedEffect(r) {
+    val haveStream = r != null && r.playable.isNotEmpty()
+    // Once there is something to play, wait a moment for the other addons, so a better stream isn't missed.
+    LaunchedEffect(haveStream) {
+        if (haveStream) {
+            delay(2500)
+            grace = true
+        }
+    }
+    LaunchedEffect(r, done, grace) {
         if (r != null && r.playable.isNotEmpty()) {
             if (quickPlay && !autoDone) {
-                autoDone = true
-                actions.onPlay(item, pick.video, r.playable.first())
-            } else {
+                if (done || grace) {
+                    autoDone = true
+                    actions.onPlay(item, pick.video, r.playable.first())
+                }
+            } else if (!focusedOnce) {
+                focusedOnce = true
                 runCatching { firstFocus.requestFocus() }
             }
+        } else if (r != null && done && r.playable.isEmpty()) {
+            runCatching { firstFocus.requestFocus() }
         }
     }
 

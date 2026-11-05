@@ -18,6 +18,7 @@ class StremioActions(
     val onToggleFavourite: (StremioItem) -> Unit,
     val byGenre: suspend (type: String, genre: String) -> List<StremioRow>,
     val loadDetails: suspend (StremioItem) -> StremioItem,
-    val loadStreams: suspend (type: String, videoId: String) -> StremioStreams,
+    /** Finds streams. [onUpdate] is called as each addon answers, so playback can start before the slowest one finishes. */
+    val loadStreams: suspend (type: String, videoId: String, onUpdate: (StremioStreams) -> Unit) -> StremioStreams,
     val onPlay: (item: StremioItem, video: StremioVideo?, stream: StremioStream) -> Unit,
 )
