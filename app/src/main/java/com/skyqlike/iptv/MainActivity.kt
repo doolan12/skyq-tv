@@ -167,6 +167,19 @@ private fun ReelApp(context: Context) {
         }
     }
 
+    // A Kids profile also gets ready-made kids rows from TMDB (needs the TMDB key).
+    var kidsRows by remember { mutableStateOf<List<com.skyqlike.iptv.data.stremio.StremioRow>>(emptyList()) }
+    val kidsNow = profile?.kids == true
+    LaunchedEffect(settings.tmdbKey, kidsNow) {
+        val key = settings.tmdbKey.trim()
+        if (!kidsNow || key.isBlank()) {
+            kidsRows = emptyList()
+        } else {
+            tmdbRepo.kidsRows(key, cacheOnly = true).getOrNull()?.let { if (it.isNotEmpty()) kidsRows = it }
+            tmdbRepo.kidsRows(key).getOrNull()?.let { if (it.isNotEmpty()) kidsRows = it }
+        }
+    }
+
     val loadAddons: () -> Unit = {
         if (stremioState is StremioState.Idle || stremioState is StremioState.Error) {
             stremioState = StremioState.Loading
@@ -354,9 +367,9 @@ private fun ReelApp(context: Context) {
 
     // A Kids profile only sees child-friendly titles.
     val isKids = current?.kids == true
-    val viewState: StremioState = remember(stremioState, isKids) {
+    val viewState: StremioState = remember(stremioState, isKids, kidsRows) {
         val st = stremioState
-        if (isKids && st is StremioState.Ready) StremioState.Ready(KidsFilter.filter(st.home)) else st
+        if (isKids && st is StremioState.Ready) StremioState.Ready(KidsFilter.filter(st.home, kidsRows)) else st
     }
     val viewTrending: Trending? = remember(trending, isKids) {
         if (isKids && trending != null) Trending(KidsFilter.filter(trending!!.movies), KidsFilter.filter(trending!!.series)) else trending
@@ -371,9 +384,13 @@ private fun ReelApp(context: Context) {
                     resetNavigation()
                     profile = it
                 },
-                onAdd = { name, kids ->
+                onEdit = { updated ->
+                    profiles = profiles.map { if (it.id == updated.id) updated else it }
+                    profileStore.save(profiles)
+                },
+                onAdd = { name, kids, avatar, color ->
                     val create = {
-                        val p = Profile(profileStore.newId(profiles), name, profiles.size, kids)
+                        val p = Profile(profileStore.newId(profiles), name, color, kids, avatar)
                         profiles = profiles + p
                         profileStore.save(profiles)
                     }
