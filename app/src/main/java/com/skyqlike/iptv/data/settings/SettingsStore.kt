@@ -15,6 +15,8 @@ data class AppSettings(
     val quickPlay: Boolean = true,
     /** Show a Skip Intro button where the community database knows the times. */
     val skipIntro: Boolean = true,
+    /** The user's free TMDB key. It switches on the Trending rows. Kept on this device only. */
+    val tmdbKey: String = "",
 )
 
 /** Saves settings on the device. */
@@ -29,6 +31,7 @@ class SettingsStore(context: Context) {
         audioLang = prefs.getString("audioLang", "en") ?: "",
         quickPlay = prefs.getBoolean("quickPlay", true),
         skipIntro = prefs.getBoolean("skipIntro", true),
+        tmdbKey = prefs.getString("tmdbKey", "") ?: "",
     )
 
     fun save(s: AppSettings) {
@@ -40,6 +43,7 @@ class SettingsStore(context: Context) {
             .putString("audioLang", s.audioLang)
             .putBoolean("quickPlay", s.quickPlay)
             .putBoolean("skipIntro", s.skipIntro)
+            .putString("tmdbKey", s.tmdbKey)
             .apply()
     }
 }

@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -29,6 +30,7 @@ import com.skyqlike.iptv.data.settings.AppSettings
 import com.skyqlike.iptv.data.stremio.StremioSession
 import com.skyqlike.iptv.ui.common.ActionButton
 import com.skyqlike.iptv.ui.common.FocusTile
+import com.skyqlike.iptv.ui.common.LabeledField
 import com.skyqlike.iptv.ui.stremio.AccountPage
 import com.skyqlike.iptv.ui.stremio.StremioActions
 import com.skyqlike.iptv.ui.theme.Palette
@@ -77,6 +79,8 @@ fun SettingsScreen(
         else -> "Not set up"
     }
     val languageName = Languages.firstOrNull { it.first == settings.audioLang }?.second ?: "Automatic"
+    var tmdbText by remember { mutableStateOf(settings.tmdbKey) }
+    var tmdbSaved by remember { mutableStateOf(false) }
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -124,6 +128,31 @@ fun SettingsScreen(
             SettingRow("Reconnect automatically if a stream drops", onOff(settings.autoReconnect)) {
                 onChange(settings.copy(autoReconnect = !settings.autoReconnect))
             }
+        }
+        item { Text("Trending rows (optional)", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary, modifier = Modifier.padding(top = 8.dp)) }
+        item { LabeledField("TMDB key (free from themoviedb.org)", tmdbText) { tmdbText = it; tmdbSaved = false } }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ActionButton("Save key", Modifier.width(140.dp)) {
+                    onChange(settings.copy(tmdbKey = tmdbText.trim()))
+                    tmdbSaved = true
+                }
+                if (settings.tmdbKey.isNotBlank()) {
+                    ActionButton("Remove key", Modifier.width(150.dp)) {
+                        tmdbText = ""
+                        onChange(settings.copy(tmdbKey = ""))
+                        tmdbSaved = false
+                    }
+                }
+                if (tmdbSaved) Text("Saved. Go back to Home to see it.", fontSize = 15.sp, color = Palette.TextSecondary)
+            }
+        }
+        item {
+            Text(
+                "With a key, Home shows what is trending today. Without one it shows the popular lists from your addons. The key stays on this device.",
+                fontSize = 13.sp,
+                color = Palette.TextSecondary,
+            )
         }
         item { SettingRow("Clear Continue Watching", "") { onClearHistory() } }
         item { SettingRow("Switch profile", "") { onSwitchProfile() } }

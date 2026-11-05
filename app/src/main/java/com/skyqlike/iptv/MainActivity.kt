@@ -36,6 +36,8 @@ import com.skyqlike.iptv.data.stremio.StremioItem
 import com.skyqlike.iptv.data.stremio.StremioRepository
 import com.skyqlike.iptv.data.stremio.StremioState
 import com.skyqlike.iptv.data.stremio.StremioStore
+import com.skyqlike.iptv.data.tmdb.TmdbRepository
+import com.skyqlike.iptv.data.tmdb.Trending
 import com.skyqlike.iptv.ui.browse.BrowseScreen
 import com.skyqlike.iptv.ui.browse.BrowseUi
 import com.skyqlike.iptv.ui.detail.DetailScreen
@@ -78,6 +80,7 @@ private fun ReelApp(context: Context) {
     val profileStore = remember { ProfileStore(context) }
     val settingsStore = remember { SettingsStore(context) }
     val stremioRepo = remember { StremioRepository() }
+    val tmdbRepo = remember { TmdbRepository() }
     val stremioStore = remember { StremioStore(context) }
     val browseUi = remember { BrowseUi() }
 
@@ -91,6 +94,7 @@ private fun ReelApp(context: Context) {
     var showSettings by remember { mutableStateOf(false) }
     var playRequest by remember { mutableStateOf<PlayRequest?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
+    var trending by remember { mutableStateOf<Trending?>(null) }
 
     // Each profile has its own Continue Watching and My List.
     val current = profile
@@ -107,6 +111,18 @@ private fun ReelApp(context: Context) {
         if (note != null) {
             delay(2500)
             note = null
+        }
+    }
+
+    // With a TMDB key saved in Settings, fetch what's trending today for the Home rows.
+    LaunchedEffect(settings.tmdbKey) {
+        trending = null
+        val key = settings.tmdbKey.trim()
+        if (key.isNotBlank()) {
+            tmdbRepo.trending(key).fold(
+                onSuccess = { trending = it },
+                onFailure = { note = it.message ?: "Couldn't load trending titles." },
+            )
         }
     }
 
@@ -276,6 +292,7 @@ private fun ReelApp(context: Context) {
                 state = stremioState,
                 continueEntries = continueEntries,
                 favourites = favourites,
+                trending = trending,
                 actions = actions,
                 onOpen = { detail = DetailRequest(it, false) },
                 onPlay = { detail = DetailRequest(it, true) },

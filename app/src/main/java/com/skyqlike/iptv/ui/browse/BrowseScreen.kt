@@ -45,6 +45,7 @@ import com.skyqlike.iptv.data.profile.Profile
 import com.skyqlike.iptv.data.stremio.StremioItem
 import com.skyqlike.iptv.data.stremio.StremioRow
 import com.skyqlike.iptv.data.stremio.StremioState
+import com.skyqlike.iptv.data.tmdb.Trending
 import com.skyqlike.iptv.ui.common.ActionButton
 import com.skyqlike.iptv.ui.common.Artwork
 import com.skyqlike.iptv.ui.common.FocusTile
@@ -88,6 +89,7 @@ fun BrowseScreen(
     state: StremioState,
     continueEntries: List<HistoryEntry>,
     favourites: List<StremioItem>,
+    trending: Trending?,
     actions: StremioActions,
     onOpen: (StremioItem) -> Unit,
     onPlay: (StremioItem) -> Unit,
@@ -188,17 +190,24 @@ fun BrowseScreen(
                 if (items.isNotEmpty()) rails += RailSpec(Rail(title, items.map { tileFor(it, onOpen, toggle) }), w, h)
             }
 
-            // The first list your addons give for movies (or series), which is normally "Popular".
-            // It becomes the Top 10 row, and is left out of the normal rows so it doesn't show twice.
+            // A numbered row. With a TMDB key it shows what is trending today. Without one it shows the
+            // first list your addons give (normally "Popular"), named honestly, and that list is left out
+            // of the normal rows so it doesn't show twice.
             val usedForTop10 = ArrayList<StremioRow>()
             fun notTop10(r: StremioRow) = usedForTop10.none { it === r }
 
-            fun addTop10(title: String, rowType: String) {
+            fun addTop10(rowType: String) {
+                val word = if (rowType == "movie") "Movies" else "Series"
+                val live = (if (rowType == "movie") trending?.movies else trending?.series).orEmpty().take(10)
+                if (live.size >= 5) {
+                    rails += RailSpec(Rail("Trending $word Today", live.map { tileFor(it, onOpen, toggle) }), 130.dp, 195.dp, top10 = true)
+                    return
+                }
                 val first = state.home.rows.firstOrNull { it.type == rowType } ?: return
                 val items = first.items.filter { !it.poster.isNullOrBlank() }.take(10)
                 if (items.size < 5) return
                 usedForTop10 += first
-                rails += RailSpec(Rail(title, items.map { tileFor(it, onOpen, toggle) }), 130.dp, 195.dp, top10 = true)
+                rails += RailSpec(Rail("Popular $word", items.map { tileFor(it, onOpen, toggle) }), 130.dp, 195.dp, top10 = true)
             }
 
             fun addContinue(filterType: String?) {
@@ -250,8 +259,8 @@ fun BrowseScreen(
                 }
                 tab == TAB_HOME -> {
                     addContinue(null)
-                    addTop10("Top 10 Series", "series")
-                    addTop10("Top 10 Movies", "movie")
+                    addTop10("series")
+                    addTop10("movie")
                     val movieRows = state.home.rows.filter { it.type == "movie" && notTop10(it) }
                     val seriesRows = state.home.rows.filter { it.type == "series" && notTop10(it) }
                     // Series and movie rows take turns, so Home has a bit of everything.
@@ -262,8 +271,8 @@ fun BrowseScreen(
                 }
                 else -> {
                     addContinue(type)
-                    if (type == "series") addTop10("Top 10 Series", "series")
-                    if (type == "movie") addTop10("Top 10 Movies", "movie")
+                    if (type == "series") addTop10("series")
+                    if (type == "movie") addTop10("movie")
                     state.home.rows.filter { it.type == type && notTop10(it) }.forEach { row: StremioRow -> add(row.title, row.items) }
                 }
             }
