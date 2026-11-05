@@ -14,6 +14,8 @@ data class PlayItem(
     val externalId: String? = null,
     /** Subtitles found by addons such as OpenSubtitles. They show up in the player's Subtitles menu. */
     val subtitles: List<ExternalSubtitle> = emptyList(),
+    /** Where the other streams for this title are kept ("type|videoId"), so another can be tried if this one fails. */
+    val streamKey: String? = null,
 )
 
 /** A subtitle file from an addon: where it is, its language code, and the name shown in the menu. */

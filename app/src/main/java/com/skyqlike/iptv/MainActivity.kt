@@ -40,12 +40,14 @@ import com.skyqlike.iptv.data.stremio.StremioItem
 import com.skyqlike.iptv.data.stremio.StremioRepository
 import com.skyqlike.iptv.data.stremio.StremioState
 import com.skyqlike.iptv.data.stremio.StremioStore
+import com.skyqlike.iptv.data.stremio.StremioStreams
 import com.skyqlike.iptv.data.stremio.StremioVideo
 import com.skyqlike.iptv.data.tmdb.TmdbRepository
 import com.skyqlike.iptv.data.tmdb.Trending
 import com.skyqlike.iptv.ui.browse.BrowseScreen
 import com.skyqlike.iptv.ui.browse.BrowseUi
 import com.skyqlike.iptv.ui.detail.DetailScreen
+import com.skyqlike.iptv.ui.detail.EpisodeState
 import com.skyqlike.iptv.ui.player.PlayerScreen
 import com.skyqlike.iptv.ui.profiles.ProfilePicker
 import com.skyqlike.iptv.ui.settings.SettingsScreen
@@ -111,6 +113,8 @@ private fun ReelApp(context: Context) {
     // Saved copies of addon pages, so Home can appear instantly next time.
     remember(context) { Http.cacheDir = File(context.cacheDir, "http"); true }
     val loadGen = remember { intArrayOf(0) }
+    // The streams found for each title, kept so the player can switch to another if one fails.
+    val streamCache = remember { java.util.concurrent.ConcurrentHashMap<String, StremioStreams>() }
     val subtitleJobs = remember { HashMap<String, Deferred<List<ExternalSubtitle>>>() }
 
     // Each profile has its own Continue Watching and My List.
@@ -250,7 +254,11 @@ private fun ReelApp(context: Context) {
             subtitleJobs.getOrPut("$type|$videoId") {
                 scope.async { runCatching { stremioRepo.subtitles(addons, type, videoId) }.getOrDefault(emptyList()) }
             }
-            stremioRepo.streams(addons, type, videoId, onUpdate)
+            val cacheKey = "$type|$videoId"
+            stremioRepo.streams(addons, type, videoId) { partial ->
+                streamCache[cacheKey] = partial
+                onUpdate(partial)
+            }.also { streamCache[cacheKey] = it }
         },
         onPlay = { title, video, stream ->
             val addons = (stremioState as? StremioState.Ready)?.home?.addons ?: emptyList()
@@ -259,6 +267,7 @@ private fun ReelApp(context: Context) {
             // Works out the episode after this one, with its stream and subtitles, for the "Up next" card.
             suspend fun resolve(nv: StremioVideo): PlayItem? {
                 val found = stremioRepo.streams(addons, "series", nv.id)
+                streamCache["series|${nv.id}"] = found
                 val s = found.playable.firstOrNull() ?: return null
                 val moreSubs = runCatching {
                     withTimeoutOrNull(5000L) { stremioRepo.subtitles(addons, "series", nv.id) }
@@ -272,6 +281,7 @@ private fun ReelApp(context: Context) {
                     imageUrl = title.poster,
                     externalId = nv.id,
                     subtitles = moreSubs,
+                    streamKey = "series|${nv.id}",
                 )
             }
             var nextResolver: (suspend (PlayItem) -> PlayItem?)? = null
@@ -301,6 +311,7 @@ private fun ReelApp(context: Context) {
                             imageUrl = title.poster,
                             externalId = video?.id,
                             subtitles = subs,
+                            streamKey = "$subType|$videoId",
                         )
                     ),
                     0,
@@ -365,6 +376,11 @@ private fun ReelApp(context: Context) {
                 autoPlay = opened.autoPlay,
                 quickPlay = settings.quickPlay,
                 autoEpisodeId = opened.episodeId,
+                episodeState = { ep ->
+                    history.firstOrNull { it.key == "stremio:series:${opened.item.id}|${ep.id}" }?.let {
+                        EpisodeState(it.finished, if (it.durationMs > 0) (it.positionMs.toFloat() / it.durationMs).coerceIn(0f, 1f) else 0f)
+                    }
+                },
                 onOpen = { detail = DetailRequest(it, false) },
                 onBack = { detail = null },
             )
@@ -425,6 +441,7 @@ private fun ReelApp(context: Context) {
                 audioLang = settings.audioLang,
                 skipIntroOn = settings.skipIntro,
                 nextEpisode = request.next,
+                alternatesFor = { item -> item.streamKey?.let { streamCache[it] }?.playable?.map { it.url } ?: emptyList() },
                 autoNext = settings.autoNext,
             )
         }

@@ -40,6 +40,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -121,6 +122,8 @@ fun PlayerScreen(
     /** Works out the episode after this one (stream and subtitles included), or null if there is none. */
     nextEpisode: (suspend (PlayItem) -> PlayItem?)? = null,
     autoNext: Boolean = true,
+    /** The web addresses of the other streams for this item (best first), used when one stops working. */
+    alternatesFor: (PlayItem) -> List<String> = { emptyList() },
 ) {
     val context = LocalContext.current
     val introRepo = remember { IntroRepository() }
@@ -145,6 +148,9 @@ fun PlayerScreen(
 
     val attempts = remember { intArrayOf(0) }
     val token = remember { intArrayOf(0) }
+    val startedOk = remember { booleanArrayOf(false) }
+    val triedUrls = remember { HashSet<String>() }
+    val alternates by rememberUpdatedState(alternatesFor)
 
     val exo = remember {
         val http = DefaultHttpDataSource.Factory()
@@ -177,12 +183,50 @@ fun PlayerScreen(
         onProgress(cur, if (finished) dur else exo.currentPosition, dur)
     }
 
+    fun buildMediaItem(cur: PlayItem): MediaItem = MediaItem.Builder()
+            .setUri(cur.url)
+            .setSubtitleConfigurations(
+                cur.subtitles.map { s ->
+                    val path = s.url.substringBefore('?').lowercase()
+                    val mime = when {
+                        path.endsWith(".vtt") -> MimeTypes.TEXT_VTT
+                        path.endsWith(".ass") || path.endsWith(".ssa") -> MimeTypes.TEXT_SSA
+                        else -> MimeTypes.APPLICATION_SUBRIP
+                    }
+                    MediaItem.SubtitleConfiguration.Builder(Uri.parse(s.url))
+                        .setMimeType(mime)
+                        .setLanguage(s.language)
+                        .setLabel(s.label)
+                        .build()
+
+    // If a stream stops working, move on to the next best one (keeping your place if it had been playing).
+    fun switchToNext(): Boolean {
+        val cur = playlist[index]
+        triedUrls += cur.url
+        val next = alternates(cur).firstOrNull { it !in triedUrls } ?: return false
+        triedUrls += next
+        val resumeAt = if (startedOk[0]) exo.currentPosition else 0L
+        playlist[index] = cur.copy(url = next)
+        token[0]++
+        attempts[0] = 0
+        startedOk[0] = false
+        failed = false
+        buffering = true
+        statusMessage = "That stream isn't working. Trying another one..."
+        val mi = buildMediaItem(playlist[index])
+        if (resumeAt > 0L) exo.setMediaItem(mi, resumeAt) else exo.setMediaItem(mi)
+        exo.prepare()
+        exo.play()
+        return true
+    }
+
     // Listens to the player: buffering, errors (with automatic reconnecting), audio/subtitle tracks.
     DisposableEffect(exo) {
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
                 buffering = state == Player.STATE_BUFFERING
                 if (state == Player.STATE_READY) {
+                    startedOk[0] = true
                     attempts[0] = 0
                     failed = false
                     statusMessage = null
@@ -204,6 +248,8 @@ fun PlayerScreen(
             }
 
             override fun onPlayerError(error: PlaybackException) {
+                // A stream that never started is a dead link, so go straight to the next one.
+                if (!startedOk[0] && switchToNext()) return
                 if (autoReconnect && attempts[0] < MAX_RETRIES) {
                     attempts[0]++
                     val myToken = token[0]
@@ -217,6 +263,8 @@ fun PlayerScreen(
                             exo.play()
                         }
                     }
+                } else if (switchToNext()) {
+                    // Moved on to another stream.
                 } else {
                     failed = true
                     buffering = false
@@ -263,26 +311,15 @@ fun PlayerScreen(
         val cur = playlist[index]
         token[0]++
         attempts[0] = 0
+        startedOk[0] = false
+        triedUrls.clear()
+        triedUrls += cur.url
         failed = false
         statusMessage = null
         buffering = true
         positionMs = 0L
         durationMs = 0L
-        val mediaItem = MediaItem.Builder()
-            .setUri(cur.url)
-            .setSubtitleConfigurations(
-                cur.subtitles.map { s ->
-                    val path = s.url.substringBefore('?').lowercase()
-                    val mime = when {
-                        path.endsWith(".vtt") -> MimeTypes.TEXT_VTT
-                        path.endsWith(".ass") || path.endsWith(".ssa") -> MimeTypes.TEXT_SSA
-                        else -> MimeTypes.APPLICATION_SUBRIP
-                    }
-                    MediaItem.SubtitleConfiguration.Builder(Uri.parse(s.url))
-                        .setMimeType(mime)
-                        .setLanguage(s.language)
-                        .setLabel(s.label)
-                        .build()
+        val mediaItem = buildMediaItem(cur)
                 }
             )
             .build()

@@ -56,6 +56,9 @@ import com.skyqlike.iptv.ui.stremio.StremioActions
 import com.skyqlike.iptv.ui.trailer.TrailerPlayer
 import com.skyqlike.iptv.ui.theme.Palette
 
+/** How far through an episode you are: [fraction] 0 to 1, or [finished]. */
+data class EpisodeState(val finished: Boolean, val fraction: Float)
+
 /** Which episode is being played (null means it's a movie). */
 private data class Pick(val video: StremioVideo?)
 
@@ -74,6 +77,8 @@ fun DetailScreen(
     autoEpisodeId: String? = null,
     /** Opens another title (from the "More like this" row). */
     onOpen: (StremioItem) -> Unit = {},
+    /** What you have watched of an episode, for the ticks and progress bars. */
+    episodeState: (StremioVideo) -> EpisodeState? = { null },
     onBack: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
@@ -132,7 +137,10 @@ fun DetailScreen(
 
         if (info.type == "series") {
             val seasons = info.videos.map { it.season }.distinct().sorted()
-            val current = if (season in seasons) season else seasons.firstOrNull { it > 0 } ?: seasons.firstOrNull() ?: 1
+            // The episode to offer on the Play button: the first one you haven't finished.
+            val ordered = info.videos.filter { it.season > 0 }.sortedWith(compareBy({ it.season }, { it.episode })).ifEmpty { info.videos }
+            val target = ordered.firstOrNull { episodeState(it)?.finished != true } ?: ordered.firstOrNull()
+            val current = if (season in seasons) season else target?.season ?: seasons.firstOrNull { it > 0 } ?: seasons.firstOrNull() ?: 1
             val episodes = info.videos.filter { it.season == current }
             LazyColumn(
                 Modifier.fillMaxSize(),
@@ -146,12 +154,15 @@ fun DetailScreen(
                         if (genreLine.isNotBlank()) Text(genreLine, fontSize = 15.sp, color = Color(0xFFD0D0D8))
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 6.dp)) {
                             ActionButton(
-                                if (episodes.isEmpty()) "Loading..." else "Play S$current E${episodes.first().episode}",
-                                Modifier.width(190.dp).focusRequester(playFocus),
+                                target?.let { t ->
+                                    val st = episodeState(t)
+                                    (if (st != null && !st.finished && st.fraction > 0f) "Resume" else "Play") + " S${t.season} E${t.episode}"
+                                } ?: "Loading...",
+                                Modifier.width(210.dp).focusRequester(playFocus),
                                 accent = true,
                                 accentColor = Color.White,
                                 textColor = Color.Black,
-                            ) { episodes.firstOrNull()?.let { picking = Pick(it) } }
+                            ) { target?.let { picking = Pick(it) } }
                             ActionButton(listLabel, Modifier.width(170.dp)) { actions.onToggleFavourite(info) }
                             if (info.trailerId != null) ActionButton("Trailer", Modifier.width(130.dp)) { showTrailer = true }
                             ActionButton("Back", Modifier.width(110.dp)) { onBack() }
@@ -190,9 +201,16 @@ fun DetailScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(14.dp),
                         ) {
-                            Artwork(ep.thumbnail ?: info.poster, ep.title.ifBlank { info.name }, Modifier.width(130.dp).fillMaxHeight().clip(RoundedCornerShape(6.dp)))
+                            val st = episodeState(ep)
+                            Box(Modifier.width(130.dp).fillMaxHeight().clip(RoundedCornerShape(6.dp))) {
+                                Artwork(ep.thumbnail ?: info.poster, ep.title.ifBlank { info.name }, Modifier.fillMaxSize())
+                                if (st != null && !st.finished && st.fraction > 0f) {
+                                    Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(Color(0x66FFFFFF)))
+                                    Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(st.fraction.coerceIn(0.03f, 1f)).height(4.dp).background(Palette.Accent))
+                                }
+                            }
                             Column(Modifier.weight(1f)) {
-                                Text("Episode ${ep.episode}", fontSize = 13.sp, color = Palette.TextSecondary)
+                                Text("Episode ${ep.episode}" + if (st?.finished == true) "   ✓ Watched" else "", fontSize = 13.sp, color = Palette.TextSecondary)
                                 Text(
                                     ep.title.ifBlank { "Episode ${ep.episode}" },
                                     fontSize = 18.sp,
