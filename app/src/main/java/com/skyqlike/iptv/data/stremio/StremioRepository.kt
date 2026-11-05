@@ -265,7 +265,7 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
         val jobs = addons.flatMap { a ->
             a.catalogs
                 .filter { isShown(it.type) && !it.needsExtra }
-                .take(8)
+                .take(12)
                 .map { a to it }
         }
 

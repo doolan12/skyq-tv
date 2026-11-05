@@ -428,14 +428,37 @@ fun BrowseScreen(
             // appeared higher up is left out of later rows, and a row left with too little new is dropped
             // (that is how two addons' "Popular" lists, or a list that duplicates the Trending row, collapse into one).
             fun tidy(rows: List<StremioRow>, maxRows: Int): List<StremioRow> {
+                // "Popular - Movies (TMDB)" and "Popular - Movies" are the same list; compare names without the addon part.
+                fun nameKey(r: StremioRow) = r.type + "|" + r.title.substringBefore(" (").lowercase().trim()
                 val out = ArrayList<StremioRow>()
+                val keys = ArrayList<String>()
                 for (r in rows) {
-                    if (out.size >= maxRows) break
+                    val ids = r.items.map { it.type + ":" + it.id }.toSet()
                     val fresh = r.items.filter { (it.type + ":" + it.id) !in shownKeys }.distinctBy { it.id }
+                    val key = nameKey(r)
+                    // Which earlier row is this one most like? Same name, or mostly the same titles.
+                    var twin = keys.indexOf(key)
+                    if (twin < 0) {
+                        var best = 0
+                        out.forEachIndexed { i, o ->
+                            val same = o.items.count { (it.type + ":" + it.id) in ids }
+                            if (same > best && same * 10 >= r.items.size * 4) { best = same; twin = i }
+                        }
+                    }
+                    if (twin >= 0) {
+                        // Fold the new titles into the earlier row, so similar categories become one.
+                        if (fresh.isNotEmpty() && out[twin].items.size < 30) {
+                            out[twin] = out[twin].copy(items = (out[twin].items + fresh).take(30))
+                            fresh.forEach { shownKeys += it.type + ":" + it.id }
+                        }
+                        continue
+                    }
+                    if (out.size >= maxRows) continue
                     // Small lists are kept only if they're mostly new.
                     if (fresh.size < minOf(6, r.items.size) || fresh.size * 2 < r.items.size) continue
                     fresh.forEach { shownKeys += it.type + ":" + it.id }
                     out += r.copy(items = fresh)
+                    keys += key
                 }
                 return out
             }
@@ -507,13 +530,13 @@ fun BrowseScreen(
                         seriesRows.getOrNull(i)?.let { mixed += it }
                         movieRows.getOrNull(i)?.let { mixed += it }
                     }
-                    tidy(mixed, 16).forEach { add(it.title, it.items) }
+                    tidy(mixed, 20).forEach { add(it.title, it.items) }
                 }
                 else -> {
                     addContinue(type)
                     if (type == "series") addTop10("series")
                     if (type == "movie") addTop10("movie")
-                    tidy(state.home.rows.filter { it.type == type && notTop10(it) }, 22).forEach { row: StremioRow -> add(row.title, row.items) }
+                    tidy(state.home.rows.filter { it.type == type && notTop10(it) }, 28).forEach { row: StremioRow -> add(row.title, row.items) }
                 }
             }
 
