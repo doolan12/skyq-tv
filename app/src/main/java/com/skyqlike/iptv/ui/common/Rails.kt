@@ -38,6 +38,8 @@ data class HomeTile(
     /** 0 to 1: how far through it you are. Shows a thin bar along the bottom of the tile. */
     val progress: Float? = null,
     val progressColor: Color = Palette.Accent,
+    /** Called when the remote lands on this tile (the Home banner follows it). */
+    val onFocus: (() -> Unit)? = null,
     val onClick: () -> Unit,
 )
 
@@ -117,6 +119,7 @@ fun Top10Row(
                         FocusTile(
                             onClick = tile.onClick,
                             onLongClick = tile.onLongClick,
+                            onFocus = { tile.onFocus?.invoke() },
                             modifier = Modifier.fillMaxSize(),
                             corner = 6.dp,
                             focusedScale = 1.1f,
@@ -136,6 +139,7 @@ fun PosterTile(tile: HomeTile, tileWidth: Dp, tileHeight: Dp) {
         FocusTile(
             onClick = tile.onClick,
             onLongClick = tile.onLongClick,
+            onFocus = { tile.onFocus?.invoke() },
             modifier = Modifier.fillMaxWidth().height(tileHeight),
             corner = 6.dp,
             focusedScale = 1.1f,

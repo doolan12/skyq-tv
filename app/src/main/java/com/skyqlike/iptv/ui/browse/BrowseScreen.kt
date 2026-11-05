@@ -156,9 +156,14 @@ fun BrowseScreen(
         ui.genre = null
     }
 
+    // The banner follows the poster the remote is on. Null means the banner is just rotating by itself.
+    var focusedHero by remember { mutableStateOf<StremioItem?>(null) }
+    val onHeroFocus: (StremioItem) -> Unit = { if (browsing && (!it.background.isNullOrBlank() || !it.poster.isNullOrBlank())) focusedHero = it }
+
     val selectTab: (Int) -> Unit = {
         ui.tab = it
         ui.genre = null
+        focusedHero = null
         heroIndex = 0
     }
 
@@ -196,7 +201,7 @@ fun BrowseScreen(
         }
     }
     // A silent trailer plays behind the banner. The banner stays on that title while it plays.
-    val heroNow = heroItems.getOrNull(heroIndex.coerceIn(0, (heroItems.size - 1).coerceAtLeast(0)))
+    val heroNow = focusedHero?.takeIf { browsing } ?: heroItems.getOrNull(heroIndex.coerceIn(0, (heroItems.size - 1).coerceAtLeast(0)))
     val heroKey = heroNow?.let { it.type + ":" + it.id }
     val trailerIds = remember { mutableStateMapOf<String, String>() }
     val previewFailed = remember { mutableStateListOf<String>() }
@@ -211,8 +216,8 @@ fun BrowseScreen(
         if (id != null) trailerIds[k] = id else previewFailed += k
     }
     // Every banner title gets its turn: about 25 seconds of trailer, or a few seconds if it has none.
-    LaunchedEffect(heroKey, previewPlaying, tab, previewsOn) {
-        if (heroItems.size > 1) {
+    LaunchedEffect(heroKey, previewPlaying, tab, previewsOn, focusedHero) {
+        if (heroItems.size > 1 && focusedHero == null) {
             val waitingForTrailer = previewsOn && heroKey != null && heroKey in trailerIds && heroKey !in previewFailed
             delay(if (previewPlaying) 25_000L else if (waitingForTrailer) 14_000L else 9_000L)
             heroIndex = (heroIndex + 1) % heroItems.size
@@ -304,7 +309,7 @@ fun BrowseScreen(
             val rails = ArrayList<RailSpec>()
 
             fun add(title: String, items: List<StremioItem>, w: Dp = 130.dp, h: Dp = 195.dp) {
-                if (items.isNotEmpty()) rails += RailSpec(Rail(title, items.map { tileFor(it, onOpen, toggle, topPostersKey) }), w, h)
+                if (items.isNotEmpty()) rails += RailSpec(Rail(title, items.map { tileFor(it, onOpen, toggle, topPostersKey, onHeroFocus) }), w, h)
             }
 
             // A numbered row. With a TMDB key it shows what is trending today. Without one it shows the
@@ -317,14 +322,14 @@ fun BrowseScreen(
                 val word = if (rowType == "movie") "Movies" else "Series"
                 val live = (if (rowType == "movie") trending?.movies else trending?.series).orEmpty().take(10)
                 if (live.size >= 5) {
-                    rails += RailSpec(Rail("Trending $word Today", live.map { tileFor(it, onOpen, toggle, topPostersKey) }), 130.dp, 195.dp, top10 = true)
+                    rails += RailSpec(Rail("Trending $word Today", live.map { tileFor(it, onOpen, toggle, topPostersKey, onHeroFocus) }), 130.dp, 195.dp, top10 = true)
                     return
                 }
                 val first = state.home.rows.firstOrNull { it.type == rowType } ?: return
                 val items = first.items.filter { !it.poster.isNullOrBlank() }.take(10)
                 if (items.size < 5) return
                 usedForTop10 += first
-                rails += RailSpec(Rail("Popular $word", items.map { tileFor(it, onOpen, toggle, topPostersKey) }), 130.dp, 195.dp, top10 = true)
+                rails += RailSpec(Rail("Popular $word", items.map { tileFor(it, onOpen, toggle, topPostersKey, onHeroFocus) }), 130.dp, 195.dp, top10 = true)
             }
 
             fun addContinue(filterType: String?) {
@@ -503,7 +508,7 @@ fun BrowseScreen(
                 item {
                     Box(Modifier.fillMaxWidth()) {
                         if (showBanner) {
-                            val hero = heroItems[heroIndex.coerceIn(0, heroItems.size - 1)]
+                            val hero = focusedHero?.takeIf { browsing } ?: heroItems[heroIndex.coerceIn(0, heroItems.size - 1)]
                             Billboard(
                                 item = hero,
                                 isFavourite = favourites.any { it.type == hero.type && it.id == hero.id },
@@ -514,7 +519,10 @@ fun BrowseScreen(
                                 previewId = if (previewsOn && heroKey != null && heroKey !in previewFailed) trailerIds[heroKey] else null,
                                 heroCount = heroItems.size,
                                 heroPos = heroIndex.coerceIn(0, heroItems.size - 1),
-                                onHeroJump = { heroIndex = it.coerceIn(0, heroItems.size - 1) },
+                                onHeroJump = {
+                                    focusedHero = null
+                                    heroIndex = it.coerceIn(0, heroItems.size - 1)
+                                },
                                 onPreviewPlaying = { previewPlaying = true },
                                 onPreviewStopped = { previewPlaying = false },
                                 onPreviewFailed = {
@@ -813,13 +821,20 @@ private fun interleave(a: List<StremioItem>, b: List<StremioItem>): List<Stremio
     return out
 }
 
-private fun tileFor(item: StremioItem, onOpen: (StremioItem) -> Unit, onFavourite: (StremioItem) -> Unit, topPostersKey: String) =
+private fun tileFor(
+    item: StremioItem,
+    onOpen: (StremioItem) -> Unit,
+    onFavourite: (StremioItem) -> Unit,
+    topPostersKey: String,
+    onFocus: (StremioItem) -> Unit,
+) =
     HomeTile(
         id = item.type + ":" + item.id,
         title = item.name,
         subtitle = item.year,
         imageUrl = TopPosters.poster(topPostersKey, item.id, item.poster),
         onLongClick = { onFavourite(item) },
+        onFocus = { onFocus(item) },
     ) { onOpen(item) }
 
 /**
