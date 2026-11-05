@@ -50,7 +50,9 @@ import com.skyqlike.iptv.ui.browse.BrowseUi
 import com.skyqlike.iptv.ui.detail.DetailScreen
 import com.skyqlike.iptv.ui.detail.EpisodeState
 import com.skyqlike.iptv.ui.player.PlayerScreen
+import com.skyqlike.iptv.ui.profiles.PinPrompt
 import com.skyqlike.iptv.ui.profiles.ProfilePicker
+import com.skyqlike.iptv.data.profile.KidsFilter
 import com.skyqlike.iptv.ui.settings.SettingsScreen
 import com.skyqlike.iptv.ui.shuffle.PlaySomethingScreen
 import com.skyqlike.iptv.ui.shuffle.ShuffleState
@@ -105,6 +107,13 @@ private fun ReelApp(context: Context) {
     var profiles by remember { mutableStateOf(profileStore.all()) }
     // With only one profile there is nobody to choose between, so go straight in.
     var profile by remember { mutableStateOf<Profile?>(if (profiles.size == 1) profiles.first() else null) }
+    var pinRequest by remember { mutableStateOf<PinRequest?>(null) }
+    // In a Kids profile, some things need the PIN first.
+    val askPinIfKids: (() -> Unit) -> Unit = { action ->
+        if (profile?.kids == true && profileStore.pin().isNotEmpty()) {
+            pinRequest = PinRequest("Enter PIN", profileStore.pin()) { action() }
+        } else action()
+    }
     var settings by remember { mutableStateOf(settingsStore.load()) }
     var stremio by remember { mutableStateOf(stremioStore.load()) }
     var stremioState by remember { mutableStateOf<StremioState>(StremioState.Idle) }
@@ -235,7 +244,7 @@ private fun ReelApp(context: Context) {
         },
         search = { query ->
             val addons = (stremioState as? StremioState.Ready)?.home?.addons ?: emptyList()
-            stremioRepo.search(addons, query)
+            stremioRepo.search(addons, query).let { found -> if (profile?.kids == true) KidsFilter.filter(found) else found }
         },
         onToggleFavourite = { title ->
             val had = favourites.any { it.type == title.type && it.id == title.id }
@@ -249,7 +258,9 @@ private fun ReelApp(context: Context) {
         },
         byGenre = { type, genre ->
             val addons = (stremioState as? StremioState.Ready)?.home?.addons ?: emptyList()
-            stremioRepo.byGenre(addons, type, genre)
+            stremioRepo.byGenre(addons, type, genre).let { rows ->
+                if (profile?.kids == true) rows.map { it.copy(items = KidsFilter.filter(it.items)) }.filter { it.items.isNotEmpty() } else rows
+            }
         },
         loadDetails = { title ->
             val addons = (stremioState as? StremioState.Ready)?.home?.addons ?: emptyList()
@@ -328,6 +339,16 @@ private fun ReelApp(context: Context) {
         },
     )
 
+    // A Kids profile only sees child-friendly titles.
+    val isKids = current?.kids == true
+    val viewState: StremioState = remember(stremioState, isKids) {
+        val st = stremioState
+        if (isKids && st is StremioState.Ready) StremioState.Ready(KidsFilter.filter(st.home)) else st
+    }
+    val viewTrending: Trending? = remember(trending, isKids) {
+        if (isKids && trending != null) Trending(KidsFilter.filter(trending!!.movies), KidsFilter.filter(trending!!.series)) else trending
+    }
+
     Box(Modifier.fillMaxSize().background(Palette.Background)) {
         val opened = detail
         when {
@@ -337,10 +358,19 @@ private fun ReelApp(context: Context) {
                     resetNavigation()
                     profile = it
                 },
-                onAdd = { name ->
-                    val p = Profile(profileStore.newId(profiles), name, profiles.size)
-                    profiles = profiles + p
-                    profileStore.save(profiles)
+                onAdd = { name, kids ->
+                    val create = {
+                        val p = Profile(profileStore.newId(profiles), name, profiles.size, kids)
+                        profiles = profiles + p
+                        profileStore.save(profiles)
+                    }
+                    // The first Kids profile needs a PIN to be chosen.
+                    if (kids && profileStore.pin().isEmpty()) {
+                        pinRequest = PinRequest("Choose a PIN for Kids profiles", "") { pin ->
+                            profileStore.setPin(pin)
+                            create()
+                        }
+                    } else create()
                 },
                 onRemove = { p ->
                     context.getSharedPreferences("history_${p.id}", Context.MODE_PRIVATE).edit().clear().apply()
@@ -395,8 +425,8 @@ private fun ReelApp(context: Context) {
             )
             showShuffle -> PlaySomethingScreen(
                 state = shuffleState,
-                items = ((stremioState as? StremioState.Ready)?.home?.rows?.flatMap { it.items } ?: emptyList()) +
-                    (trending?.movies ?: emptyList()) + (trending?.series ?: emptyList()),
+                items = (((viewState as? StremioState.Ready)?.home?.rows?.flatMap { it.items } ?: emptyList()) +
+                    (viewTrending?.movies ?: emptyList()) + (viewTrending?.series ?: emptyList())),
                 favourites = favourites,
                 watched = history,
                 actions = actions,
@@ -408,11 +438,11 @@ private fun ReelApp(context: Context) {
             else -> BrowseScreen(
                 ui = browseUi,
                 profile = current,
-                state = stremioState,
+                state = viewState,
                 continueEntries = continueEntries,
                 watched = history,
                 favourites = favourites,
-                trending = trending,
+                trending = viewTrending,
                 topPostersKey = settings.topPostersKey,
                 actions = actions,
                 onOpen = { detail = DetailRequest(it, false) },
@@ -424,11 +454,13 @@ private fun ReelApp(context: Context) {
                     note = "Removed ${it.name} from Continue Watching"
                 },
                 onOpenEpisode = { item, episodeId -> detail = DetailRequest(item, false, episodeId) },
-                onSettings = { showSettings = true },
+                onSettings = { askPinIfKids { showSettings = true } },
                 onShuffle = { showShuffle = true },
                 onSwitchProfile = {
-                    resetNavigation()
-                    profile = null
+                    askPinIfKids {
+                        resetNavigation()
+                        profile = null
+                    }
                 },
             )
         }
@@ -443,6 +475,18 @@ private fun ReelApp(context: Context) {
                     .padding(bottom = 28.dp)
                     .background(Color(0xE6101014), RoundedCornerShape(24.dp))
                     .padding(horizontal = 22.dp, vertical = 12.dp),
+            )
+        }
+
+        pinRequest?.let { req ->
+            PinPrompt(
+                title = req.title,
+                expected = req.expected,
+                onDone = { pin ->
+                    pinRequest = null
+                    req.onOk(pin)
+                },
+                onCancel = { pinRequest = null },
             )
         }
 
@@ -469,3 +513,6 @@ private fun ReelApp(context: Context) {
         }
     }
 }
+
+/** A PIN screen waiting to be shown. [expected] empty means the user is choosing a new PIN. */
+private class PinRequest(val title: String, val expected: String, val onOk: (String) -> Unit)

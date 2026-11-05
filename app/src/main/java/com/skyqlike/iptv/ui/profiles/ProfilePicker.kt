@@ -69,12 +69,13 @@ fun ProfileAvatar(profile: Profile, modifier: Modifier = Modifier, letterSize: T
 fun ProfilePicker(
     profiles: List<Profile>,
     onPick: (Profile) -> Unit,
-    onAdd: (String) -> Unit,
+    onAdd: (String, Boolean) -> Unit,
     onRemove: (Profile) -> Unit,
 ) {
     var adding by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<Profile?>(null) }
     var name by remember { mutableStateOf("") }
+    var kids by remember { mutableStateOf(false) }
     val firstFocus = remember { FocusRequester() }
 
     BackHandler(enabled = adding || removing != null) {
@@ -108,17 +109,25 @@ fun ProfilePicker(
                 Text("Add a profile", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
                 Spacer(Modifier.height(20.dp))
                 Box(Modifier.width(420.dp)) { LabeledField("Name", name) { name = it } }
+                Spacer(Modifier.height(12.dp))
+                ActionButton(if (kids) "Kids profile: On" else "Kids profile: Off", Modifier.width(260.dp), accent = kids) { kids = !kids }
+                if (kids) {
+                    Spacer(Modifier.height(6.dp))
+                    Text("Only child-friendly titles. A PIN is needed to leave it or open Settings.", fontSize = 13.sp, color = Palette.TextSecondary)
+                }
                 Spacer(Modifier.height(16.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     ActionButton("Save", Modifier.width(130.dp), accent = true) {
                         val clean = name.trim()
                         if (clean.isNotEmpty()) {
-                            onAdd(clean)
+                            onAdd(clean, kids)
+                            kids = false
                             name = ""
                             adding = false
                         }
                     }
                     ActionButton("Cancel", Modifier.width(130.dp)) {
+                        kids = false
                         name = ""
                         adding = false
                     }
@@ -161,7 +170,7 @@ fun ProfilePicker(
                                 ProfileAvatar(p, Modifier.fillMaxSize(), 44.sp)
                             }
                             Text(
-                                p.name,
+                                if (p.kids) p.name + " (Kids)" else p.name,
                                 fontSize = 17.sp,
                                 color = Palette.TextPrimary,
                                 maxLines = 1,
