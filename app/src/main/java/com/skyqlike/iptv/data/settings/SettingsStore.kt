@@ -31,6 +31,8 @@ data class AppSettings(
     val kidsList: String = "",
     /** The one addon whose lists fill Home. Empty means every addon. */
     val catalogSource: String = "",
+    /** 0 = none, 1-3 = a small to large gap round the screen edge, for TVs and projectors that crop the picture. */
+    val screenMargin: Int = 0,
 )
 
 /** Saves settings on the device. */
@@ -53,6 +55,7 @@ class SettingsStore(context: Context) {
         topPostersKey = prefs.getString("topPostersKey", "") ?: "",
         kidsList = prefs.getString("kidsList", "") ?: "",
         catalogSource = prefs.getString("catalogSource", "") ?: "",
+        screenMargin = prefs.getInt("screenMargin", 0),
     )
 
     fun save(s: AppSettings) {
@@ -72,6 +75,7 @@ class SettingsStore(context: Context) {
             .putString("topPostersKey", s.topPostersKey)
             .putString("kidsList", s.kidsList)
             .putString("catalogSource", s.catalogSource)
+            .putInt("screenMargin", s.screenMargin)
             .apply()
     }
 }

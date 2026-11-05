@@ -394,6 +394,8 @@ private fun ReelApp(context: Context) {
     }
 
     Box(Modifier.fillMaxSize().background(Palette.Background)) {
+        // Everything except the video sits inside the screen margin, so a TV that crops the edges can't cut anything off.
+        Box(Modifier.fillMaxSize().padding((settings.screenMargin.coerceIn(0, 3) * 14).dp)) {
         val opened = detail
         when {
             current == null -> ProfilePicker(
@@ -542,6 +544,7 @@ private fun ReelApp(context: Context) {
                 },
                 onCancel = { pinRequest = null },
             )
+        }
         }
 
         // The player sits on top of everything. Back returns to the screen you came from.

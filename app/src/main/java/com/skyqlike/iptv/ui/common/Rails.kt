@@ -16,6 +16,12 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.TextStyle
@@ -63,12 +69,15 @@ fun RailRow(
             )
         }
         // The vertical padding leaves room for a tile to grow when the remote lands on it.
+        // While the remote is in this row, the posters you're not on dim a little so the one you're on stands out.
+        var rowFocused by remember { mutableStateOf(false) }
         LazyRow(
+            modifier = Modifier.onFocusChanged { rowFocused = it.hasFocus },
             contentPadding = PaddingValues(horizontal = 48.dp, vertical = 14.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             itemsIndexed(rail.tiles, key = { i, t -> "$i|${rail.title}|${t.id}" }) { _, tile ->
-                PosterTile(tile, tileWidth, tileHeight)
+                PosterTile(tile, tileWidth, tileHeight, dimWhenOthersFocused = rowFocused)
             }
         }
     }
@@ -134,15 +143,21 @@ fun Top10Row(
 }
 
 @Composable
-fun PosterTile(tile: HomeTile, tileWidth: Dp, tileHeight: Dp) {
-    Column(Modifier.width(tileWidth)) {
+fun PosterTile(tile: HomeTile, tileWidth: Dp, tileHeight: Dp, dimWhenOthersFocused: Boolean = false) {
+    var tileFocused by remember { mutableStateOf(false) }
+    Column(
+        Modifier
+            .width(tileWidth)
+            .onFocusChanged { tileFocused = it.hasFocus }
+            .alpha(if (dimWhenOthersFocused && !tileFocused) 0.6f else 1f),
+    ) {
         FocusTile(
             onClick = tile.onClick,
             onLongClick = tile.onLongClick,
             onFocus = { tile.onFocus?.invoke() },
             modifier = Modifier.fillMaxWidth().height(tileHeight),
             corner = 6.dp,
-            focusedScale = 1.1f,
+            focusedScale = 1.12f,
         ) {
             Box(Modifier.fillMaxSize()) {
                 Artwork(
@@ -185,6 +200,36 @@ fun PosterTile(tile: HomeTile, tileWidth: Dp, tileHeight: Dp) {
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(start = 2.dp),
             )
+        }
+    }
+}
+
+/** Grey placeholder rows that gently pulse while Home is loading, so the screen doesn't sit empty. */
+@Composable
+fun ShimmerHome() {
+    val pulse by androidx.compose.animation.core.rememberInfiniteTransition(label = "shimmer").animateFloat(
+        initialValue = 0.25f,
+        targetValue = 0.6f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            androidx.compose.animation.core.tween(900),
+            androidx.compose.animation.core.RepeatMode.Reverse,
+        ),
+        label = "shimmerAlpha",
+    )
+    Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        repeat(3) {
+            Box(
+                Modifier.padding(start = 48.dp).width(180.dp).height(18.dp).alpha(pulse)
+                    .background(Color(0xFF3A3A44), androidx.compose.foundation.shape.RoundedCornerShape(4.dp))
+            )
+            Row(Modifier.padding(horizontal = 48.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                repeat(8) {
+                    Box(
+                        Modifier.width(130.dp).height(195.dp).alpha(pulse)
+                            .background(Color(0xFF2A2A32), androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                    )
+                }
+            }
         }
     }
 }

@@ -287,7 +287,7 @@ fun BrowseScreen(
     when (state) {
         is StremioState.Idle, is StremioState.Loading -> Column(Modifier.fillMaxSize()) {
             TopBar(tab, selectTab, profile, onSettings, onSwitchProfile, onShuffle)
-            Note("Loading your addons...")
+            com.skyqlike.iptv.ui.common.ShimmerHome()
         }
         is StremioState.Error -> Column(Modifier.fillMaxSize()) {
             TopBar(tab, selectTab, profile, onSettings, onSwitchProfile, onShuffle)

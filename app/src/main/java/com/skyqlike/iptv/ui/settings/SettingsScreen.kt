@@ -144,6 +144,11 @@ fun SettingsScreen(
             }
         }
         item {
+            SettingRow("Screen margin (if your TV cuts off the edges)", listOf("Off", "Small", "Medium", "Large")[settings.screenMargin.coerceIn(0, 3)]) {
+                onChange(settings.copy(screenMargin = (settings.screenMargin + 1) % 4))
+            }
+        }
+        item {
             SettingRow("Video previews on the Home banner", onOff(settings.previews)) {
                 onChange(settings.copy(previews = !settings.previews))
             }
