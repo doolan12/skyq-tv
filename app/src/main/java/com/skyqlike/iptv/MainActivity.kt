@@ -365,6 +365,7 @@ private fun ReelApp(context: Context) {
                 autoPlay = opened.autoPlay,
                 quickPlay = settings.quickPlay,
                 autoEpisodeId = opened.episodeId,
+                onOpen = { detail = DetailRequest(it, false) },
                 onBack = { detail = null },
             )
             else -> BrowseScreen(
@@ -379,6 +380,12 @@ private fun ReelApp(context: Context) {
                 actions = actions,
                 onOpen = { detail = DetailRequest(it, false) },
                 onPlay = { detail = DetailRequest(it, true) },
+                previewsOn = settings.previews,
+                onRemoveContinue = {
+                    historyStore.removeTitle(it.type, it.id)
+                    history = historyStore.entries()
+                    note = "Removed ${it.name} from Continue Watching"
+                },
                 onOpenEpisode = { item, episodeId -> detail = DetailRequest(item, false, episodeId) },
                 onSettings = { showSettings = true },
                 onSwitchProfile = {

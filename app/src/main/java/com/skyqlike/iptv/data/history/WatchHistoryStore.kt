@@ -92,6 +92,28 @@ class WatchHistoryStore(context: Context, profileId: String) {
         prefs.edit().putString("entries", arr.toString()).apply()
     }
 
+    /** Forgets one movie or series (all its episodes), so it leaves Continue Watching. */
+    fun removeTitle(type: String, id: String) {
+        val keep = entries().filterNot { it.key.removePrefix("stremio:").substringBefore('|') == "$type:$id" }
+        val arr = JSONArray()
+        keep.take(MAX_ENTRIES).forEach { e ->
+            arr.put(
+                JSONObject()
+                    .put("key", e.key)
+                    .put("title", e.title)
+                    .put("subtitle", e.subtitle)
+                    .put("url", e.url)
+                    .put("imageUrl", e.imageUrl ?: "")
+                    .put("kind", e.kind.name)
+                    .put("positionMs", e.positionMs)
+                    .put("durationMs", e.durationMs)
+                    .put("updatedAt", e.updatedAt)
+                    .put("finished", e.finished)
+            )
+        }
+        prefs.edit().putString("entries", arr.toString()).apply()
+    }
+
     /** Forgets everything watched (Continue Watching). */
     fun clear() {
         prefs.edit().clear().apply()

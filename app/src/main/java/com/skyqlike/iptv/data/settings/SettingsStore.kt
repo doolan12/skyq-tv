@@ -17,6 +17,8 @@ data class AppSettings(
     val skipIntro: Boolean = true,
     /** At the end of an episode, start the next one by itself. */
     val autoNext: Boolean = true,
+    /** A silent trailer plays behind the Home banner. */
+    val previews: Boolean = true,
     /** The user's free TMDB key. It switches on the Trending rows. Kept on this device only. */
     val tmdbKey: String = "",
     /** The user's free Top Posters key. It puts rating badges on posters. Kept on this device only. */
@@ -36,6 +38,7 @@ class SettingsStore(context: Context) {
         quickPlay = prefs.getBoolean("quickPlay", true),
         skipIntro = prefs.getBoolean("skipIntro", true),
         autoNext = prefs.getBoolean("autoNext", true),
+        previews = prefs.getBoolean("previews", true),
         tmdbKey = prefs.getString("tmdbKey", "") ?: "",
         topPostersKey = prefs.getString("topPostersKey", "") ?: "",
     )
@@ -50,6 +53,7 @@ class SettingsStore(context: Context) {
             .putBoolean("quickPlay", s.quickPlay)
             .putBoolean("skipIntro", s.skipIntro)
             .putBoolean("autoNext", s.autoNext)
+            .putBoolean("previews", s.previews)
             .putString("tmdbKey", s.tmdbKey)
             .putString("topPostersKey", s.topPostersKey)
             .apply()

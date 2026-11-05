@@ -111,6 +111,11 @@ fun SettingsScreen(
             }
         }
         item {
+            SettingRow("Video previews on the Home banner", onOff(settings.previews)) {
+                onChange(settings.copy(previews = !settings.previews))
+            }
+        }
+        item {
             SettingRow("Resume where I left off", onOff(settings.resume)) {
                 onChange(settings.copy(resume = !settings.resume))
             }

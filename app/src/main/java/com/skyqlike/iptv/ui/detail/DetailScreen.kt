@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -48,6 +49,8 @@ import com.skyqlike.iptv.data.stremio.StremioVideo
 import com.skyqlike.iptv.ui.common.ActionButton
 import com.skyqlike.iptv.ui.common.Artwork
 import com.skyqlike.iptv.ui.common.FocusTile
+import com.skyqlike.iptv.ui.common.HomeTile
+import com.skyqlike.iptv.ui.common.PosterTile
 import com.skyqlike.iptv.ui.common.MetaLine
 import com.skyqlike.iptv.ui.stremio.StremioActions
 import com.skyqlike.iptv.ui.trailer.TrailerPlayer
@@ -69,6 +72,8 @@ fun DetailScreen(
     quickPlay: Boolean,
     /** For "Up next" tiles: the episode to start as soon as the series has loaded. */
     autoEpisodeId: String? = null,
+    /** Opens another title (from the "More like this" row). */
+    onOpen: (StremioItem) -> Unit = {},
     onBack: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
@@ -84,6 +89,20 @@ fun DetailScreen(
         if (autoEpisodeId != null) {
             info.videos.firstOrNull { it.id == autoEpisodeId }?.let { picking = Pick(it) }
         }
+    }
+
+    // "More like this": titles from your addons that share this one's genres.
+    var similar by remember(start.id) { mutableStateOf<List<StremioItem>>(emptyList()) }
+    val firstGenre = info.genres.firstOrNull()
+    LaunchedEffect(start.id, firstGenre) {
+        val g = firstGenre ?: return@LaunchedEffect
+        val rows = runCatching { actions.byGenre(info.type, g) }.getOrDefault(emptyList())
+        val mine = info.genres.map { it.lowercase() }.toSet()
+        similar = rows.flatMap { it.items }
+            .filter { it.id != info.id && !it.poster.isNullOrBlank() }
+            .distinctBy { it.type + ":" + it.id }
+            .sortedByDescending { it.genres.count { x -> x.lowercase() in mine } }
+            .take(20)
     }
 
     val pick = picking
@@ -186,6 +205,9 @@ fun DetailScreen(
                         }
                     }
                 }
+                if (similar.size >= 4) {
+                    item { MoreLikeThis(similar, onOpen, Modifier.padding(top = 14.dp)) }
+                }
                 if (info.videos.isEmpty()) {
                     item { Text("Loading episodes... If this stays empty, none of your addons list episodes for this series.", fontSize = 15.sp, color = Palette.TextSecondary) }
                 }
@@ -218,12 +240,35 @@ fun DetailScreen(
                     maxLines = 4,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (similar.size >= 4) MoreLikeThis(similar, onOpen, Modifier.padding(top = 6.dp))
             }
         }
 
         val trailerId = info.trailerId
         if (showTrailer && trailerId != null) {
             TrailerPlayer(trailerId) { showTrailer = false }
+        }
+    }
+}
+
+/** A sideways row of similar titles. */
+@Composable
+private fun MoreLikeThis(items: List<StremioItem>, onOpen: (StremioItem) -> Unit, modifier: Modifier = Modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("More like this", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(vertical = 6.dp)) {
+            items(items, key = { it.type + ":" + it.id }) { it2 ->
+                PosterTile(
+                    HomeTile(
+                        id = it2.type + ":" + it2.id,
+                        title = it2.name,
+                        subtitle = it2.year,
+                        imageUrl = it2.poster,
+                    ) { onOpen(it2) },
+                    100.dp,
+                    150.dp,
+                )
+            }
         }
     }
 }

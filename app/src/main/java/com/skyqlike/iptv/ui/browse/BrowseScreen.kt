@@ -24,6 +24,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -60,6 +63,7 @@ import com.skyqlike.iptv.ui.common.Top10Row
 import com.skyqlike.iptv.ui.profiles.ProfileAvatar
 import com.skyqlike.iptv.ui.stremio.StremioActions
 import com.skyqlike.iptv.ui.theme.Palette
+import com.skyqlike.iptv.ui.trailer.TrailerPreview
 import kotlinx.coroutines.delay
 
 /**
@@ -109,6 +113,10 @@ fun BrowseScreen(
     onPlay: (StremioItem) -> Unit,
     /** Opens a series and starts this episode (used by the "Up next" tiles in Continue Watching). */
     onOpenEpisode: (StremioItem, String) -> Unit,
+    /** Press and hold on a Continue Watching tile removes that title from the row. */
+    onRemoveContinue: (StremioItem) -> Unit,
+    /** Whether a silent trailer plays behind the banner. */
+    previewsOn: Boolean,
     onSettings: () -> Unit,
     onSwitchProfile: () -> Unit,
 ) {
@@ -171,10 +179,25 @@ fun BrowseScreen(
             pool.take(6)
         }
     }
+    // A silent trailer plays behind the banner. The banner stays on that title while it plays.
+    val heroNow = heroItems.getOrNull(heroIndex.coerceIn(0, (heroItems.size - 1).coerceAtLeast(0)))
+    val heroKey = heroNow?.let { it.type + ":" + it.id }
+    val trailerIds = remember { mutableStateMapOf<String, String>() }
+    val previewFailed = remember { mutableStateListOf<String>() }
+    var previewPlaying by remember { mutableStateOf(false) }
+    LaunchedEffect(heroKey, previewsOn) {
+        previewPlaying = false
+        val h = heroNow ?: return@LaunchedEffect
+        val k = heroKey ?: return@LaunchedEffect
+        if (!previewsOn || k in trailerIds || k in previewFailed) return@LaunchedEffect
+        delay(2000)
+        val id = h.trailerId ?: runCatching { actions.loadDetails(h).trailerId }.getOrNull()
+        if (id != null) trailerIds[k] = id else previewFailed += k
+    }
     LaunchedEffect(heroItems.size, tab) {
         while (heroItems.size > 1) {
             delay(9000)
-            heroIndex = (heroIndex + 1) % heroItems.size
+            if (!previewPlaying) heroIndex = (heroIndex + 1) % heroItems.size
         }
     }
 
@@ -287,6 +310,7 @@ fun BrowseScreen(
                         subtitle = e.subtitle,
                         imageUrl = found.poster,
                         progress = if (e.durationMs > 0) e.positionMs.toFloat() / e.durationMs else null,
+                        onLongClick = { onRemoveContinue(found) },
                     ) { onOpen(found) }
                 }
                 if (filterType == null || filterType == "series") {
@@ -296,6 +320,7 @@ fun BrowseScreen(
                             title = u.item.name,
                             subtitle = "Up next: S${u.video.season} E${u.video.episode}",
                             imageUrl = u.item.poster,
+                            onLongClick = { onRemoveContinue(u.item) },
                         ) { onOpenEpisode(u.item, u.video.id) }
                     }
                 }
@@ -447,6 +472,13 @@ fun BrowseScreen(
                                 onPlay = { onPlay(hero) },
                                 onInfo = { onOpen(hero) },
                                 onFavourite = { toggle(hero) },
+                                previewId = if (previewsOn && heroKey != null && heroKey !in previewFailed) trailerIds[heroKey] else null,
+                                onPreviewPlaying = { previewPlaying = true },
+                                onPreviewStopped = { previewPlaying = false },
+                                onPreviewFailed = {
+                                    previewPlaying = false
+                                    if (heroKey != null) previewFailed += heroKey
+                                },
                             )
                         }
                         TopBar(tab, selectTab, profile, onSettings, onSwitchProfile, Modifier.align(Alignment.TopStart))
@@ -586,10 +618,26 @@ private fun Billboard(
     onPlay: () -> Unit,
     onInfo: () -> Unit,
     onFavourite: () -> Unit,
+    previewId: String?,
+    onPreviewPlaying: () -> Unit,
+    onPreviewStopped: () -> Unit,
+    onPreviewFailed: () -> Unit,
 ) {
     Box(Modifier.fillMaxWidth().height(340.dp)) {
         FadeIn(item.type + ":" + item.id) {
             Artwork(item.background ?: item.poster, item.name, Modifier.fillMaxSize())
+        }
+        // The trailer fades in over the picture once it is really playing.
+        if (previewId != null) {
+            key(item.type + ":" + item.id + ":" + previewId) {
+                TrailerPreview(
+                    videoId = previewId,
+                    modifier = Modifier.fillMaxSize(),
+                    onPlaying = onPreviewPlaying,
+                    onEnded = onPreviewStopped,
+                    onFailed = onPreviewFailed,
+                )
+            }
         }
         // Dark on the left so the writing is easy to read, and fading into the page at the bottom.
         Box(
