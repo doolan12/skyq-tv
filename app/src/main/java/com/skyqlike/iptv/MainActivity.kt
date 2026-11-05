@@ -291,6 +291,7 @@ private fun ReelApp(context: Context) {
                 profile = current,
                 state = stremioState,
                 continueEntries = continueEntries,
+                watched = history,
                 favourites = favourites,
                 trending = trending,
                 actions = actions,

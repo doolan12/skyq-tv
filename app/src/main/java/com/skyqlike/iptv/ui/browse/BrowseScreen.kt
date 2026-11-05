@@ -79,6 +79,11 @@ private const val TAB_SEARCH = 4
 
 private val TabNames = listOf("Home", "Series", "Movies", "My List", "Search")
 
+/** Titles that share a second genre with the one picked, for a row like "Action & Comedy". */
+private class PairBucket(val label: String) {
+    val items = ArrayList<StremioItem>()
+}
+
 /** A row on the page, with the size its tiles are drawn at. */
 private class RailSpec(val rail: Rail, val width: Dp, val height: Dp, val top10: Boolean = false)
 
@@ -88,6 +93,8 @@ fun BrowseScreen(
     profile: Profile,
     state: StremioState,
     continueEntries: List<HistoryEntry>,
+    /** Everything this profile has watched, including finished titles. Used for suggestions. */
+    watched: List<HistoryEntry>,
     favourites: List<StremioItem>,
     trending: Trending?,
     actions: StremioActions,
@@ -170,6 +177,27 @@ fun BrowseScreen(
         }
     }
 
+    // Works out the genres of what you've watched recently, so the suggestion rows know your taste.
+    // Each title is looked up once; the answers are kept while the app is open.
+    val genreCache = remember { HashMap<String, List<String>>() }
+    var watchedGenres by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
+    LaunchedEffect(ready != null, watched.firstOrNull()?.key, favourites.size) {
+        val r = ready ?: return@LaunchedEffect
+        val pool = r.home.rows.flatMap { it.items }
+        val recent = watched.filter { it.key.startsWith("stremio:") }.mapNotNull { entryToItem(it) }
+            .distinctBy { it.type + ":" + it.id }.take(6)
+        val out = LinkedHashMap<String, List<String>>()
+        for (w in recent) {
+            val k = w.type + ":" + w.id
+            out[k] = genreCache.getOrPut(k) {
+                pool.firstOrNull { it.type == w.type && it.id == w.id && it.genres.isNotEmpty() }?.genres
+                    ?: favourites.firstOrNull { it.type == w.type && it.id == w.id && it.genres.isNotEmpty() }?.genres
+                    ?: runCatching { actions.loadDetails(w).genres }.getOrDefault(emptyList())
+            }
+        }
+        watchedGenres = out
+    }
+
     when (state) {
         is StremioState.Idle, is StremioState.Loading -> Column(Modifier.fillMaxSize()) {
             TopBar(tab, selectTab, profile, onSettings, onSwitchProfile)
@@ -232,6 +260,54 @@ fun BrowseScreen(
                 )
             }
 
+            // Suggestions for Home: "Because you watched ..." and "Picked for you", from the titles
+            // already loaded. Things you've watched or put in My List are left out.
+            fun addSuggestions() {
+                val seen = HashSet<String>()
+                val recentItems = watched.filter { it.key.startsWith("stremio:") }.mapNotNull { entryToItem(it) }
+                recentItems.forEach { seen += it.type + ":" + it.id }
+                favourites.forEach { seen += it.type + ":" + it.id }
+                val fresh = state.home.rows.flatMap { it.items }
+                    .filter { !it.poster.isNullOrBlank() && (it.type + ":" + it.id) !in seen }
+                    .distinctBy { it.type + ":" + it.id }
+                if (fresh.isEmpty()) return
+
+                fun overlap(a: List<String>, b: List<String>): Int {
+                    val set = a.map { it.lowercase() }.toSet()
+                    return b.count { it.lowercase() in set }
+                }
+
+                val shown = HashSet<String>()
+                // Titles like the one you watched most recently.
+                val last = watchedGenres.entries.firstOrNull { it.value.isNotEmpty() }
+                if (last != null) {
+                    val need = minOf(2, last.value.size)
+                    val like = fresh.map { it to overlap(last.value, it.genres) }
+                        .filter { it.second >= need }
+                        .sortedByDescending { it.second }
+                        .map { it.first }
+                        .take(20)
+                    val name = recentItems.firstOrNull { (it.type + ":" + it.id) == last.key }?.name
+                    if (like.size >= 5 && name != null) {
+                        like.forEach { shown += it.type + ":" + it.id }
+                        add("Because you watched $name", like)
+                    }
+                }
+                // Your overall taste: genres of what you've watched count double, My List counts once.
+                val weights = HashMap<String, Int>()
+                watchedGenres.values.forEach { gs -> gs.forEach { g -> weights[g.lowercase()] = (weights[g.lowercase()] ?: 0) + 2 } }
+                favourites.take(10).forEach { f -> f.genres.forEach { g -> weights[g.lowercase()] = (weights[g.lowercase()] ?: 0) + 1 } }
+                if (weights.isNotEmpty()) {
+                    val picks = fresh.filter { (it.type + ":" + it.id) !in shown }
+                        .map { it to it.genres.sumOf { g -> weights[g.lowercase()] ?: 0 } }
+                        .filter { it.second > 0 }
+                        .sortedByDescending { it.second }
+                        .map { it.first }
+                        .take(20)
+                    if (picks.size >= 5) add("Picked for you", picks)
+                }
+            }
+
             val hits = results
             when {
                 tab == TAB_SEARCH -> if (searching && hits != null) {
@@ -255,12 +331,32 @@ fun BrowseScreen(
                                 .filter { it.genres.any { x -> x.equals(g, true) } && seen.add(it.id) }
                             add(g, local)
                         }
+                        // Mixed rows such as "Action & Comedy": titles that carry both genres.
+                        // They only appear here, once a genre is picked, and never on Home.
+                        val localAll = state.home.rows.filter { it.type == type }.flatMap { it.items }
+                        val both = (fromAddons.flatMap { it.items } + localAll)
+                            .filter { it.genres.any { x -> x.equals(g, true) } }
+                            .distinctBy { it.type + ":" + it.id }
+                        val buckets = LinkedHashMap<String, PairBucket>()
+                        both.forEach { item ->
+                            item.genres.forEach { other ->
+                                if (!other.equals(g, true)) {
+                                    buckets.getOrPut(other.lowercase()) { PairBucket(other) }.items += item
+                                }
+                            }
+                        }
+                        buckets.values
+                            .filter { it.items.size >= 6 }
+                            .sortedByDescending { it.items.size }
+                            .take(6)
+                            .forEach { add("$g & ${it.label}", it.items.take(30)) }
                     }
                 }
                 tab == TAB_HOME -> {
                     addContinue(null)
                     addTop10("series")
                     addTop10("movie")
+                    addSuggestions()
                     val movieRows = state.home.rows.filter { it.type == "movie" && notTop10(it) }
                     val seriesRows = state.home.rows.filter { it.type == "series" && notTop10(it) }
                     // Series and movie rows take turns, so Home has a bit of everything.
