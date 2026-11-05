@@ -504,9 +504,6 @@ fun BrowseScreen(
                 all.distinctBy { it.lowercase() }.take(40)
             }
             val showBanner = browsing && ui.genre == null && heroItems.isNotEmpty()
-            val names = state.home.addons.joinToString(", ") { it.name }
-            val addonNote = "${state.home.addons.size} addon(s) loaded: $names" +
-                if (state.home.failedAddons > 0) "  |  ${state.home.failedAddons} couldn't be reached" else ""
 
             LazyColumn(
                 Modifier.fillMaxSize(),
@@ -575,7 +572,6 @@ fun BrowseScreen(
                     }
                 }
                 if (tab == TAB_SEARCH && !searching) {
-                    item { Note("Type at least 2 letters to search all your addons.") }
                     // Ideas for when you don't know what to type: what's trending today, or else the first titles on Home.
                     val ideas: List<StremioItem> = run {
                         val live = interleave(trending?.movies.orEmpty(), trending?.series.orEmpty())
@@ -628,14 +624,6 @@ fun BrowseScreen(
                 itemsIndexed(rails, key = { i, r -> "$i|${r.rail.title}" }) { _, spec ->
                     if (spec.top10) Top10Row(spec.rail.title, spec.rail.tiles, spec.width, spec.height)
                     else RailRow(spec.rail, spec.width, spec.height)
-                }
-                item {
-                    Text(
-                        addonNote,
-                        fontSize = 12.sp,
-                        color = Palette.TextSecondary,
-                        modifier = Modifier.padding(horizontal = 48.dp, vertical = 8.dp),
-                    )
                 }
             }
         }
