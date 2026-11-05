@@ -198,6 +198,9 @@ fun PlayerScreen(
                         .setLanguage(s.language)
                         .setLabel(s.label)
                         .build()
+                }
+            )
+            .build()
 
     // If a stream stops working, move on to the next best one (keeping your place if it had been playing).
     fun switchToNext(): Boolean {
@@ -320,9 +323,6 @@ fun PlayerScreen(
         positionMs = 0L
         durationMs = 0L
         val mediaItem = buildMediaItem(cur)
-                }
-            )
-            .build()
         if (subtitlesOn && cur.subtitles.isNotEmpty()) {
             exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
                 .setPreferredTextLanguage(audioLang.ifBlank { "en" })
