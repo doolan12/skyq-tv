@@ -40,6 +40,13 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
@@ -203,10 +210,23 @@ fun BrowseScreen(
         val id = h.trailerId ?: runCatching { actions.loadDetails(h).trailerId }.getOrNull()
         if (id != null) trailerIds[k] = id else previewFailed += k
     }
-    LaunchedEffect(heroItems.size, tab) {
-        while (heroItems.size > 1) {
-            delay(9000)
-            if (!previewPlaying) heroIndex = (heroIndex + 1) % heroItems.size
+    // Every banner title gets its turn: about 25 seconds of trailer, or a few seconds if it has none.
+    LaunchedEffect(heroKey, previewPlaying, tab, previewsOn) {
+        if (heroItems.size > 1) {
+            val waitingForTrailer = previewsOn && heroKey != null && heroKey in trailerIds && heroKey !in previewFailed
+            delay(if (previewPlaying) 25_000L else if (waitingForTrailer) 14_000L else 9_000L)
+            heroIndex = (heroIndex + 1) % heroItems.size
+        }
+    }
+    // Looks up every banner title's trailer ahead of time, so the next one is ready as soon as it appears.
+    LaunchedEffect(heroItems.map { it.type + ":" + it.id }, previewsOn) {
+        if (!previewsOn) return@LaunchedEffect
+        delay(1500)
+        for (h in heroItems) {
+            val k = h.type + ":" + h.id
+            if (k in trailerIds || k in previewFailed) continue
+            val id = h.trailerId ?: runCatching { actions.loadDetails(h).trailerId }.getOrNull()
+            if (id != null) trailerIds[k] = id else previewFailed += k
         }
     }
 
@@ -492,6 +512,9 @@ fun BrowseScreen(
                                 onInfo = { onOpen(hero) },
                                 onFavourite = { toggle(hero) },
                                 previewId = if (previewsOn && heroKey != null && heroKey !in previewFailed) trailerIds[heroKey] else null,
+                                heroCount = heroItems.size,
+                                heroPos = heroIndex.coerceIn(0, heroItems.size - 1),
+                                onHeroJump = { heroIndex = it.coerceIn(0, heroItems.size - 1) },
                                 onPreviewPlaying = { previewPlaying = true },
                                 onPreviewStopped = { previewPlaying = false },
                                 onPreviewFailed = {
@@ -582,58 +605,65 @@ private fun TopBar(
     onShuffle: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier
-            .fillMaxWidth()
-            .background(Brush.verticalGradient(listOf(Color(0xCC000000), Color.Transparent)))
-            .padding(horizontal = 40.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Text(
-            "REELHOUSE",
-            fontSize = 22.sp,
-            fontWeight = FontWeight.ExtraBold,
-            color = Palette.Accent,
-            letterSpacing = 2.sp,
-            modifier = Modifier.padding(end = 20.dp),
-        )
-        // The tabs scroll sideways if the screen is too narrow, so Settings and the profile never get pushed off.
+    // On a phone there isn't room for the full name and wide buttons, so everything shrinks to fit.
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val compact = maxWidth < 900.dp
+        val itemWidth = if (compact) 66.dp else 100.dp
+        val itemFont = if (compact) 14.sp else 16.sp
         Row(
-            Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+            Modifier
+                .fillMaxWidth()
+                .background(Brush.verticalGradient(listOf(Color(0xCC000000), Color.Transparent)))
+                .padding(horizontal = if (compact) 20.dp else 40.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 6.dp),
         ) {
-            TabNames.forEachIndexed { i, label -> NavItem(label, tab == i) { onTab(i) } }
-        }
-        NavItem("Shuffle", false) { onShuffle() }
-        NavItem("Settings", false) { onSettings() }
-        FocusTile(
-            onClick = onSwitchProfile,
-            modifier = Modifier.width(38.dp).height(38.dp),
-            corner = 6.dp,
-            focusedScale = 1.1f,
-            backgroundColor = Color.Transparent,
-        ) {
-            ProfileAvatar(profile, Modifier.fillMaxSize())
+            Text(
+                if (compact) "R" else "REELHOUSE",
+                fontSize = 22.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = Palette.Accent,
+                letterSpacing = if (compact) 0.sp else 2.sp,
+                modifier = Modifier.padding(end = if (compact) 8.dp else 20.dp),
+            )
+            // The tabs scroll sideways if the screen is still too narrow, so Settings and the profile never get pushed off.
+            Row(
+                Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 6.dp),
+            ) {
+                TabNames.forEachIndexed { i, label -> NavItem(label, tab == i, itemWidth, itemFont) { onTab(i) } }
+                NavItem("Shuffle", false, itemWidth, itemFont) { onShuffle() }
+            }
+            NavItem("Settings", false, if (compact) 76.dp else 100.dp, itemFont) { onSettings() }
+            FocusTile(
+                onClick = onSwitchProfile,
+                modifier = Modifier.width(38.dp).height(38.dp),
+                corner = 6.dp,
+                focusedScale = 1.1f,
+                backgroundColor = Color.Transparent,
+            ) {
+                ProfileAvatar(profile, Modifier.fillMaxSize())
+            }
         }
     }
 }
 
 @Composable
-private fun NavItem(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun NavItem(label: String, selected: Boolean, width: Dp, fontSize: TextUnit, onClick: () -> Unit) {
     FocusTile(
         onClick = onClick,
-        modifier = Modifier.width(100.dp).height(38.dp),
+        modifier = Modifier.width(width).height(38.dp),
         corner = 19.dp,
         focusedScale = 1.05f,
         backgroundColor = if (selected) Color(0x40FFFFFF) else Color.Transparent,
     ) {
         Text(
             label,
-            fontSize = 16.sp,
+            fontSize = fontSize,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
             color = if (selected) Color.White else Color(0xFFD0D0D0),
+            maxLines = 1,
             modifier = Modifier.align(Alignment.Center),
         )
     }
@@ -651,11 +681,26 @@ private fun Billboard(
     onInfo: () -> Unit,
     onFavourite: () -> Unit,
     previewId: String?,
+    heroCount: Int,
+    heroPos: Int,
+    onHeroJump: (Int) -> Unit,
     onPreviewPlaying: () -> Unit,
     onPreviewStopped: () -> Unit,
     onPreviewFailed: () -> Unit,
 ) {
-    Box(Modifier.fillMaxWidth().height(340.dp)) {
+    Box(
+        Modifier.fillMaxWidth().height(340.dp).pointerInput(heroCount, heroPos) {
+            var drag = 0f
+            detectHorizontalDragGestures(
+                onDragStart = { drag = 0f },
+                onDragEnd = {
+                    if (heroCount > 1 && drag > 90f) onHeroJump((heroPos - 1 + heroCount) % heroCount)
+                    else if (heroCount > 1 && drag < -90f) onHeroJump((heroPos + 1) % heroCount)
+                },
+                onHorizontalDrag = { _, dx -> drag += dx },
+            )
+        }
+    ) {
         FadeIn(item.type + ":" + item.id) {
             Artwork(item.background ?: item.poster, item.name, Modifier.fillMaxSize())
         }
@@ -682,6 +727,25 @@ private fun Billboard(
                 Brush.verticalGradient(0f to Color.Transparent, 0.7f to Color.Transparent, 1f to Palette.Background)
             )
         )
+        // Carousel controls: back, dots showing which title this is, forward. Swiping the banner works too.
+        if (heroCount > 1) {
+            Row(
+                Modifier.align(Alignment.BottomEnd).padding(end = 40.dp, bottom = 22.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                ActionButton("‹", Modifier.width(44.dp)) { onHeroJump((heroPos - 1 + heroCount) % heroCount) }
+                repeat(heroCount) { i ->
+                    Box(
+                        Modifier
+                            .size(if (i == heroPos) 10.dp else 8.dp)
+                            .background(if (i == heroPos) Color.White else Color(0x66FFFFFF), CircleShape)
+                            .clickable { onHeroJump(i) }
+                    )
+                }
+                ActionButton("›", Modifier.width(44.dp)) { onHeroJump((heroPos + 1) % heroCount) }
+            }
+        }
         Column(
             Modifier.align(Alignment.CenterStart).fillMaxWidth(0.5f).padding(start = 48.dp, top = 56.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
