@@ -31,6 +31,7 @@ import com.skyqlike.iptv.data.model.PlayKind
 import com.skyqlike.iptv.data.profile.Profile
 import com.skyqlike.iptv.data.profile.ProfileStore
 import com.skyqlike.iptv.data.settings.SettingsStore
+import com.skyqlike.iptv.data.stremio.supports
 import com.skyqlike.iptv.data.stremio.StremioFavouritesStore
 import com.skyqlike.iptv.data.stremio.StremioItem
 import com.skyqlike.iptv.data.stremio.StremioRepository
