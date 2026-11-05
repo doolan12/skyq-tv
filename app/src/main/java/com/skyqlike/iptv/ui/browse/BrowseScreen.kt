@@ -46,6 +46,7 @@ import com.skyqlike.iptv.data.stremio.StremioItem
 import com.skyqlike.iptv.data.stremio.StremioRow
 import com.skyqlike.iptv.data.stremio.StremioState
 import com.skyqlike.iptv.data.tmdb.Trending
+import com.skyqlike.iptv.data.topposters.TopPosters
 import com.skyqlike.iptv.ui.common.ActionButton
 import com.skyqlike.iptv.ui.common.Artwork
 import com.skyqlike.iptv.ui.common.FocusTile
@@ -97,6 +98,8 @@ fun BrowseScreen(
     watched: List<HistoryEntry>,
     favourites: List<StremioItem>,
     trending: Trending?,
+    /** The Top Posters key from Settings. Empty means normal posters. */
+    topPostersKey: String,
     actions: StremioActions,
     onOpen: (StremioItem) -> Unit,
     onPlay: (StremioItem) -> Unit,
@@ -215,7 +218,7 @@ fun BrowseScreen(
             val rails = ArrayList<RailSpec>()
 
             fun add(title: String, items: List<StremioItem>, w: Dp = 130.dp, h: Dp = 195.dp) {
-                if (items.isNotEmpty()) rails += RailSpec(Rail(title, items.map { tileFor(it, onOpen, toggle) }), w, h)
+                if (items.isNotEmpty()) rails += RailSpec(Rail(title, items.map { tileFor(it, onOpen, toggle, topPostersKey) }), w, h)
             }
 
             // A numbered row. With a TMDB key it shows what is trending today. Without one it shows the
@@ -228,14 +231,14 @@ fun BrowseScreen(
                 val word = if (rowType == "movie") "Movies" else "Series"
                 val live = (if (rowType == "movie") trending?.movies else trending?.series).orEmpty().take(10)
                 if (live.size >= 5) {
-                    rails += RailSpec(Rail("Trending $word Today", live.map { tileFor(it, onOpen, toggle) }), 130.dp, 195.dp, top10 = true)
+                    rails += RailSpec(Rail("Trending $word Today", live.map { tileFor(it, onOpen, toggle, topPostersKey) }), 130.dp, 195.dp, top10 = true)
                     return
                 }
                 val first = state.home.rows.firstOrNull { it.type == rowType } ?: return
                 val items = first.items.filter { !it.poster.isNullOrBlank() }.take(10)
                 if (items.size < 5) return
                 usedForTop10 += first
-                rails += RailSpec(Rail("Popular $word", items.map { tileFor(it, onOpen, toggle) }), 130.dp, 195.dp, top10 = true)
+                rails += RailSpec(Rail("Popular $word", items.map { tileFor(it, onOpen, toggle, topPostersKey) }), 130.dp, 195.dp, top10 = true)
             }
 
             fun addContinue(filterType: String?) {
@@ -626,12 +629,12 @@ private fun interleave(a: List<StremioItem>, b: List<StremioItem>): List<Stremio
     return out
 }
 
-private fun tileFor(item: StremioItem, onOpen: (StremioItem) -> Unit, onFavourite: (StremioItem) -> Unit) =
+private fun tileFor(item: StremioItem, onOpen: (StremioItem) -> Unit, onFavourite: (StremioItem) -> Unit, topPostersKey: String) =
     HomeTile(
         id = item.type + ":" + item.id,
         title = item.name,
         subtitle = item.year,
-        imageUrl = item.poster,
+        imageUrl = TopPosters.poster(topPostersKey, item.id, item.poster),
         onLongClick = { onFavourite(item) },
     ) { onOpen(item) }
 

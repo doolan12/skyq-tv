@@ -294,6 +294,7 @@ private fun ReelApp(context: Context) {
                 watched = history,
                 favourites = favourites,
                 trending = trending,
+                topPostersKey = settings.topPostersKey,
                 actions = actions,
                 onOpen = { detail = DetailRequest(it, false) },
                 onPlay = { detail = DetailRequest(it, true) },

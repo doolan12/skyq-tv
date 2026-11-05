@@ -81,6 +81,8 @@ fun SettingsScreen(
     val languageName = Languages.firstOrNull { it.first == settings.audioLang }?.second ?: "Automatic"
     var tmdbText by remember { mutableStateOf(settings.tmdbKey) }
     var tmdbSaved by remember { mutableStateOf(false) }
+    var tpText by remember { mutableStateOf(settings.topPostersKey) }
+    var tpSaved by remember { mutableStateOf(false) }
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -150,6 +152,31 @@ fun SettingsScreen(
         item {
             Text(
                 "With a key, Home shows what is trending today. Without one it shows the popular lists from your addons. The key stays on this device.",
+                fontSize = 13.sp,
+                color = Palette.TextSecondary,
+            )
+        }
+        item { Text("Rating badges on posters (optional)", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary, modifier = Modifier.padding(top = 8.dp)) }
+        item { LabeledField("Top Posters key (free from top-posters.com)", tpText) { tpText = it; tpSaved = false } }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ActionButton("Save key", Modifier.width(140.dp)) {
+                    onChange(settings.copy(topPostersKey = tpText.trim()))
+                    tpSaved = true
+                }
+                if (settings.topPostersKey.isNotBlank()) {
+                    ActionButton("Remove key", Modifier.width(150.dp)) {
+                        tpText = ""
+                        onChange(settings.copy(topPostersKey = ""))
+                        tpSaved = false
+                    }
+                }
+                if (tpSaved) Text("Saved. Go back to Home to see it.", fontSize = 15.sp, color = Palette.TextSecondary)
+            }
+        }
+        item {
+            Text(
+                "With a key, posters show IMDb, Rotten Tomatoes and Metacritic badges. If the free monthly allowance runs out, the normal posters show instead. The key stays on this device.",
                 fontSize = 13.sp,
                 color = Palette.TextSecondary,
             )

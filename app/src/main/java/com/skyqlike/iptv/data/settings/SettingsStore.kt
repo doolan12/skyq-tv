@@ -17,6 +17,8 @@ data class AppSettings(
     val skipIntro: Boolean = true,
     /** The user's free TMDB key. It switches on the Trending rows. Kept on this device only. */
     val tmdbKey: String = "",
+    /** The user's free Top Posters key. It puts rating badges on posters. Kept on this device only. */
+    val topPostersKey: String = "",
 )
 
 /** Saves settings on the device. */
@@ -32,6 +34,7 @@ class SettingsStore(context: Context) {
         quickPlay = prefs.getBoolean("quickPlay", true),
         skipIntro = prefs.getBoolean("skipIntro", true),
         tmdbKey = prefs.getString("tmdbKey", "") ?: "",
+        topPostersKey = prefs.getString("topPostersKey", "") ?: "",
     )
 
     fun save(s: AppSettings) {
@@ -44,6 +47,7 @@ class SettingsStore(context: Context) {
             .putBoolean("quickPlay", s.quickPlay)
             .putBoolean("skipIntro", s.skipIntro)
             .putString("tmdbKey", s.tmdbKey)
+            .putString("topPostersKey", s.topPostersKey)
             .apply()
     }
 }
