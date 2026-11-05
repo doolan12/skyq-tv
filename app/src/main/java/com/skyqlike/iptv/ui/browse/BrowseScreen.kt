@@ -576,6 +576,25 @@ fun BrowseScreen(
                 }
                 if (tab == TAB_SEARCH && !searching) {
                     item { Note("Type at least 2 letters to search all your addons.") }
+                    // Ideas for when you don't know what to type: what's trending today, or else the first titles on Home.
+                    val ideas: List<StremioItem> = run {
+                        val live = interleave(trending?.movies.orEmpty(), trending?.series.orEmpty())
+                        val pool = if (live.size >= 5) live else (state as? StremioState.Ready)?.home?.rows.orEmpty().flatMap { it.items.take(4) }
+                        pool.distinctBy { it.name.lowercase() }.take(10)
+                    }
+                    if (ideas.isNotEmpty()) {
+                        item { Note("Trending right now") }
+                        item {
+                            androidx.compose.foundation.lazy.LazyRow(
+                                contentPadding = PaddingValues(horizontal = 48.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                items(ideas.size) { i ->
+                                    ActionButton(ideas[i].name, Modifier.widthIn(min = 110.dp, max = 260.dp)) { onOpen(ideas[i]) }
+                                }
+                            }
+                        }
+                    }
                     if (recent.isNotEmpty()) {
                         item { Note("Recent searches") }
                         item {
