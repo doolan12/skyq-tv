@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -90,7 +92,7 @@ fun ProfilePicker(
     }
 
     Column(
-        Modifier.fillMaxSize().background(Palette.Background).padding(horizontal = 48.dp),
+        Modifier.fillMaxSize().background(Palette.Background).verticalScroll(rememberScrollState()).padding(horizontal = 48.dp, vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -110,13 +112,8 @@ fun ProfilePicker(
                 Spacer(Modifier.height(20.dp))
                 Box(Modifier.width(420.dp)) { LabeledField("Name", name) { name = it } }
                 Spacer(Modifier.height(12.dp))
-                ActionButton(if (kids) "Kids profile: On" else "Kids profile: Off", Modifier.width(260.dp), accent = kids) { kids = !kids }
-                if (kids) {
-                    Spacer(Modifier.height(6.dp))
-                    Text("Only child-friendly titles. A PIN is needed to leave it or open Settings.", fontSize = 13.sp, color = Palette.TextSecondary)
-                }
-                Spacer(Modifier.height(16.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ActionButton(if (kids) "Kids: On" else "Kids: Off", Modifier.width(130.dp), accent = kids) { kids = !kids }
                     ActionButton("Save", Modifier.width(130.dp), accent = true) {
                         val clean = name.trim()
                         if (clean.isNotEmpty()) {
@@ -131,6 +128,10 @@ fun ProfilePicker(
                         name = ""
                         adding = false
                     }
+                }
+                if (kids) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("Kids: child-friendly titles only. A PIN is needed for Settings.", fontSize = 13.sp, color = Palette.TextSecondary)
                 }
             }
             pending != null -> {
