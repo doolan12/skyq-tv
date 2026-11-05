@@ -27,6 +27,8 @@ data class AppSettings(
     val tmdbKey: String = "",
     /** The user's free Top Posters key. It puts rating badges on posters. Kept on this device only. */
     val topPostersKey: String = "",
+    /** The link or number of your own TMDB list for Kids profiles. */
+    val kidsList: String = "",
 )
 
 /** Saves settings on the device. */
@@ -47,6 +49,7 @@ class SettingsStore(context: Context) {
         sizeCap = prefs.getInt("sizeCap", 0),
         tmdbKey = prefs.getString("tmdbKey", "") ?: "",
         topPostersKey = prefs.getString("topPostersKey", "") ?: "",
+        kidsList = prefs.getString("kidsList", "") ?: "",
     )
 
     fun save(s: AppSettings) {
@@ -64,6 +67,7 @@ class SettingsStore(context: Context) {
             .putInt("sizeCap", s.sizeCap)
             .putString("tmdbKey", s.tmdbKey)
             .putString("topPostersKey", s.topPostersKey)
+            .putString("kidsList", s.kidsList)
             .apply()
     }
 }

@@ -170,10 +170,21 @@ private fun ReelApp(context: Context) {
     // A Kids profile also gets ready-made kids rows from TMDB (needs the TMDB key).
     var kidsRows by remember { mutableStateOf<List<com.skyqlike.iptv.data.stremio.StremioRow>>(emptyList()) }
     val kidsNow = profile?.kids == true
-    LaunchedEffect(settings.tmdbKey, kidsNow) {
+    LaunchedEffect(settings.tmdbKey, settings.kidsList, kidsNow) {
         val key = settings.tmdbKey.trim()
+        val mine = settings.kidsList.trim()
         if (!kidsNow || key.isBlank()) {
             kidsRows = emptyList()
+        } else if (mine.isNotBlank()) {
+            // Your own list replaces the automatic kids rows. If it can't be read, fall back to those.
+            tmdbRepo.customList(key, mine, cacheOnly = true).getOrNull()?.let { if (it.isNotEmpty()) kidsRows = it }
+            val fresh = tmdbRepo.customList(key, mine).getOrNull()
+            if (fresh != null && fresh.isNotEmpty()) {
+                kidsRows = fresh
+            } else if (kidsRows.isEmpty()) {
+                note = "Couldn't read your Kids list, so showing the automatic kids rows."
+                tmdbRepo.kidsRows(key).getOrNull()?.let { if (it.isNotEmpty()) kidsRows = it }
+            }
         } else {
             tmdbRepo.kidsRows(key, cacheOnly = true).getOrNull()?.let { if (it.isNotEmpty()) kidsRows = it }
             tmdbRepo.kidsRows(key).getOrNull()?.let { if (it.isNotEmpty()) kidsRows = it }

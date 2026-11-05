@@ -99,6 +99,8 @@ fun SettingsScreen(
     var tmdbSaved by remember { mutableStateOf(false) }
     var tpText by remember { mutableStateOf(settings.topPostersKey) }
     var tpSaved by remember { mutableStateOf(false) }
+    var klText by remember { mutableStateOf(settings.kidsList) }
+    var klSaved by remember { mutableStateOf(false) }
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -216,6 +218,31 @@ fun SettingsScreen(
         item {
             Text(
                 "With a key, posters show IMDb, Rotten Tomatoes and Metacritic badges. If the free monthly allowance runs out, the normal posters show instead. The key stays on this device.",
+                fontSize = 13.sp,
+                color = Palette.TextSecondary,
+            )
+        }
+        item { Text("Your own Kids list (optional)", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary, modifier = Modifier.padding(top = 8.dp)) }
+        item { LabeledField("Link to your TMDB list (or its number)", klText) { klText = it; klSaved = false } }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ActionButton("Save list", Modifier.width(140.dp)) {
+                    onChange(settings.copy(kidsList = klText.trim()))
+                    klSaved = true
+                }
+                if (settings.kidsList.isNotBlank()) {
+                    ActionButton("Remove list", Modifier.width(150.dp)) {
+                        klText = ""
+                        onChange(settings.copy(kidsList = ""))
+                        klSaved = false
+                    }
+                }
+                if (klSaved) Text("Saved. Open a Kids profile to see it.", fontSize = 15.sp, color = Palette.TextSecondary)
+            }
+        }
+        item {
+            Text(
+                "Kids profiles show the titles on this list, in place of the automatic kids rows. It needs your TMDB key above, and the list has to be public.",
                 fontSize = 13.sp,
                 color = Palette.TextSecondary,
             )

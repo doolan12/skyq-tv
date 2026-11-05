@@ -67,6 +67,57 @@ class TmdbRepository {
         }
     }
 
+    /**
+     * Your own TMDB list, shown as rows of movies and rows of series. [listRef] can be the list's link
+     * (like themoviedb.org/list/8512345-kids) or just its number.
+     */
+    suspend fun customList(apiKey: String, listRef: String, cacheOnly: Boolean = false): Result<List<StremioRow>> = withContext(Dispatchers.IO) {
+        try {
+            val id = Regex("list/([A-Za-z0-9]+)").find(listRef)?.groupValues?.get(1)
+                ?: listRef.trim().takeIf { it.matches(Regex("[A-Za-z0-9]+")) }
+                ?: return@withContext Result.failure(Exception("That doesn't look like a TMDB list link."))
+            val numeric = id.all { it.isDigit() }
+            val url = if (numeric) "$BASE/list/$id?api_key=${enc(apiKey)}&language=en-US"
+            else "https://api.themoviedb.org/4/list/$id?api_key=${enc(apiKey)}&language=en-US"
+            val root = JSONObject(Http.getCached(url, 15_000, 6_000, cacheOnly))
+            val arr = root.optJSONArray("items") ?: root.optJSONArray("results")
+                ?: return@withContext Result.failure(Exception("Couldn't read that list. Is it public?"))
+            val movies = ArrayList<JSONObject>()
+            val shows = ArrayList<JSONObject>()
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                if (str(o, "poster_path") == null) continue
+                when (str(o, "media_type")) {
+                    "tv" -> shows += o
+                    "movie", null -> movies += o
+                }
+            }
+            suspend fun resolve(list: List<JSONObject>, kind: String): List<StremioItem> = coroutineScope {
+                list.take(60).map { o ->
+                    async {
+                        runCatching<StremioItem?> {
+                            val tid = o.getInt("id")
+                            val ext = JSONObject(Http.getCached("$BASE/$kind/$tid/external_ids?api_key=${enc(apiKey)}", 12_000, 6_000, cacheOnly))
+                            val imdb = str(ext, "imdb_id") ?: return@runCatching null
+                            toItem(o, imdb, kind)
+                        }.getOrNull()
+                    }
+                }.awaitAll().filterNotNull()
+            }
+            val (m, t) = coroutineScope {
+                val a = async { resolve(movies, "movie") }
+                val b = async { resolve(shows, "tv") }
+                a.await() to b.await()
+            }
+            val rows = ArrayList<StremioRow>()
+            m.chunked(20).forEachIndexed { i, c -> rows += StremioRow(if (i == 0) "Kids picks - Movies" else "More kids picks - Movies", "movie", c) }
+            t.chunked(20).forEachIndexed { i, c -> rows += StremioRow(if (i == 0) "Kids picks - Series" else "More kids picks - Series", "series", c) }
+            Result.success(rows)
+        } catch (e: Exception) {
+            Result.failure(Exception(friendly(e)))
+        }
+    }
+
     private suspend fun loadList(url: String, kind: String, count: Int, cacheOnly: Boolean, apiKey: String): List<StremioItem> = coroutineScope {
         val results = JSONObject(Http.getCached(url, 12_000, 6_000, cacheOnly)).optJSONArray("results")
             ?: return@coroutineScope emptyList<StremioItem>()
