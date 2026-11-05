@@ -74,6 +74,10 @@ class BrowseUi {
     var tab by mutableIntStateOf(0)
     var genre by mutableStateOf<String?>(null)
     var query by mutableStateOf("")
+    /** My List filters: 0 = all, 1 = movies, 2 = series. */
+    var listType by mutableIntStateOf(0)
+    /** My List order: 0 = recently added, 1 = A to Z, 2 = top rated. */
+    var listSort by mutableIntStateOf(0)
     val list = LazyListState()
 }
 
@@ -82,6 +86,9 @@ private const val TAB_SERIES = 1
 private const val TAB_MOVIES = 2
 private const val TAB_MY_LIST = 3
 private const val TAB_SEARCH = 4
+
+private val MyListTypeNames = listOf("All titles", "Movies", "Series")
+private val MyListSortNames = listOf("Recently added", "A to Z", "Top rated")
 
 private val TabNames = listOf("Home", "Series", "Movies", "My List", "Search")
 
@@ -386,8 +393,18 @@ fun BrowseScreen(
                 }
                 tab == TAB_MY_LIST -> {
                     addContinue(null)
-                    add("My Movies", favourites.filter { it.type == "movie" })
-                    add("My Series", favourites.filter { it.type == "series" })
+                    // Laid out as a wall of posters, newest first unless you change the order.
+                    val mine = favourites.filter {
+                        ui.listType == 0 || (ui.listType == 1 && it.type == "movie") || (ui.listType == 2 && it.type == "series")
+                    }
+                    val ordered = when (ui.listSort) {
+                        1 -> mine.sortedBy { it.name.lowercase() }
+                        2 -> mine.sortedByDescending { Regex("\\d+(\\.\\d+)?").find(it.rating)?.value?.toFloatOrNull() ?: 0f }
+                        else -> mine
+                    }
+                    ordered.chunked(7).forEachIndexed { i, chunk ->
+                        add(if (i == 0) "My List (${ordered.size})" else "", chunk)
+                    }
                 }
                 ui.genre != null -> {
                     val g = ui.genre!!
@@ -496,6 +513,17 @@ fun BrowseScreen(
                             genreList.forEach { g ->
                                 ActionButton(g, Modifier.width(150.dp), accent = ui.genre.equals(g, true)) { ui.genre = g }
                             }
+                        }
+                    }
+                }
+                if (tab == TAB_MY_LIST && favourites.isNotEmpty()) {
+                    item {
+                        Row(
+                            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 48.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            ActionButton(MyListTypeNames[ui.listType], Modifier.width(150.dp)) { ui.listType = (ui.listType + 1) % MyListTypeNames.size }
+                            ActionButton("Sort: " + MyListSortNames[ui.listSort], Modifier.width(220.dp)) { ui.listSort = (ui.listSort + 1) % MyListSortNames.size }
                         }
                     }
                 }

@@ -19,6 +19,10 @@ data class AppSettings(
     val autoNext: Boolean = true,
     /** A silent trailer plays behind the Home banner. */
     val previews: Boolean = true,
+    /** 0 = automatic, 1 = up to 1080p, 2 = up to 720p, 3 = best available (4K). */
+    val quality: Int = 0,
+    /** 0 = no limit, 1 = 4 GB, 2 = 8 GB, 3 = 15 GB. */
+    val sizeCap: Int = 0,
     /** The user's free TMDB key. It switches on the Trending rows. Kept on this device only. */
     val tmdbKey: String = "",
     /** The user's free Top Posters key. It puts rating badges on posters. Kept on this device only. */
@@ -39,6 +43,8 @@ class SettingsStore(context: Context) {
         skipIntro = prefs.getBoolean("skipIntro", true),
         autoNext = prefs.getBoolean("autoNext", true),
         previews = prefs.getBoolean("previews", true),
+        quality = prefs.getInt("quality", 0),
+        sizeCap = prefs.getInt("sizeCap", 0),
         tmdbKey = prefs.getString("tmdbKey", "") ?: "",
         topPostersKey = prefs.getString("topPostersKey", "") ?: "",
     )
@@ -54,6 +60,8 @@ class SettingsStore(context: Context) {
             .putBoolean("skipIntro", s.skipIntro)
             .putBoolean("autoNext", s.autoNext)
             .putBoolean("previews", s.previews)
+            .putInt("quality", s.quality)
+            .putInt("sizeCap", s.sizeCap)
             .putString("tmdbKey", s.tmdbKey)
             .putString("topPostersKey", s.topPostersKey)
             .apply()

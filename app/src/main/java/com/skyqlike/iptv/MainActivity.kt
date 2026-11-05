@@ -40,6 +40,7 @@ import com.skyqlike.iptv.data.stremio.StremioItem
 import com.skyqlike.iptv.data.stremio.StremioRepository
 import com.skyqlike.iptv.data.stremio.StremioState
 import com.skyqlike.iptv.data.stremio.StremioStore
+import com.skyqlike.iptv.data.stremio.StreamPrefs
 import com.skyqlike.iptv.data.stremio.StremioStreams
 import com.skyqlike.iptv.data.stremio.StremioVideo
 import com.skyqlike.iptv.data.tmdb.TmdbRepository
@@ -119,6 +120,8 @@ private fun ReelApp(context: Context) {
     val loadGen = remember { intArrayOf(0) }
     // The streams found for each title, kept so the player can switch to another if one fails.
     val streamCache = remember { java.util.concurrent.ConcurrentHashMap<String, StremioStreams>() }
+    // Quality and size choices from Settings, read fresh each time streams are looked up.
+    fun streamPrefs() = StreamPrefs(settings.quality, intArrayOf(0, 4, 8, 15)[settings.sizeCap.coerceIn(0, 3)])
     val subtitleJobs = remember { HashMap<String, Deferred<List<ExternalSubtitle>>>() }
 
     // Each profile has its own Continue Watching and My List.
@@ -259,7 +262,7 @@ private fun ReelApp(context: Context) {
                 scope.async { runCatching { stremioRepo.subtitles(addons, type, videoId) }.getOrDefault(emptyList()) }
             }
             val cacheKey = "$type|$videoId"
-            stremioRepo.streams(addons, type, videoId) { partial ->
+            stremioRepo.streams(addons, type, videoId, streamPrefs()) { partial ->
                 streamCache[cacheKey] = partial
                 onUpdate(partial)
             }.also { streamCache[cacheKey] = it }
@@ -270,7 +273,7 @@ private fun ReelApp(context: Context) {
             val subType = if (video != null) "series" else title.type
             // Works out the episode after this one, with its stream and subtitles, for the "Up next" card.
             suspend fun resolve(nv: StremioVideo): PlayItem? {
-                val found = stremioRepo.streams(addons, "series", nv.id)
+                val found = stremioRepo.streams(addons, "series", nv.id, streamPrefs())
                 streamCache["series|${nv.id}"] = found
                 val s = found.playable.firstOrNull() ?: return null
                 val moreSubs = runCatching {

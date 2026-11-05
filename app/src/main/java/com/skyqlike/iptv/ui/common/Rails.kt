@@ -51,13 +51,15 @@ fun RailRow(
     tileHeight: Dp = 225.dp,
 ) {
     Column {
-        Text(
-            rail.title,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = Palette.TextPrimary,
-            modifier = Modifier.padding(start = 48.dp, bottom = 2.dp),
-        )
+        if (rail.title.isNotBlank()) {
+            Text(
+                rail.title,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Palette.TextPrimary,
+                modifier = Modifier.padding(start = 48.dp, bottom = 2.dp),
+            )
+        }
         // The vertical padding leaves room for a tile to grow when the remote lands on it.
         LazyRow(
             contentPadding = PaddingValues(horizontal = 48.dp, vertical = 14.dp),

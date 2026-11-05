@@ -36,6 +36,9 @@ import com.skyqlike.iptv.ui.stremio.StremioActions
 import com.skyqlike.iptv.ui.theme.Palette
 import kotlinx.coroutines.delay
 
+private val QualityNames = listOf("Automatic", "Up to 1080p", "Up to 720p", "Best available (4K)")
+private val SizeNames = listOf("No limit", "Up to 4 GB", "Up to 8 GB", "Up to 15 GB")
+
 private val AspectNames = listOf("Fit", "Zoom", "Stretch")
 
 /** Spoken-language choices: a language code and what to call it. */
@@ -98,6 +101,16 @@ fun SettingsScreen(
         item {
             SettingRow("Pick the best stream automatically", onOff(settings.quickPlay)) {
                 onChange(settings.copy(quickPlay = !settings.quickPlay))
+            }
+        }
+        item {
+            SettingRow("Stream quality", QualityNames[settings.quality.coerceIn(0, QualityNames.lastIndex)]) {
+                onChange(settings.copy(quality = (settings.quality + 1) % QualityNames.size))
+            }
+        }
+        item {
+            SettingRow("File size limit", SizeNames[settings.sizeCap.coerceIn(0, SizeNames.lastIndex)]) {
+                onChange(settings.copy(sizeCap = (settings.sizeCap + 1) % SizeNames.size))
             }
         }
         item {

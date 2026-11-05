@@ -86,6 +86,7 @@ import kotlin.math.roundToInt
 import com.skyqlike.iptv.data.intro.IntroRepository
 import com.skyqlike.iptv.data.intro.SkipSegment
 import com.skyqlike.iptv.data.model.PlayItem
+import com.skyqlike.iptv.data.settings.TrackPrefsStore
 import com.skyqlike.iptv.data.model.PlayKind
 import com.skyqlike.iptv.ui.common.FocusTile
 import com.skyqlike.iptv.ui.theme.Palette
@@ -94,6 +95,9 @@ import kotlinx.coroutines.launch
 import java.util.Locale
 
 private const val MAX_RETRIES = 5
+
+/** The show or film a play item belongs to, so choices carry over between its episodes. */
+private fun trackBase(item: PlayItem): String = item.key.removePrefix("stremio:").substringBefore('|')
 
 private val SpeedChoices = listOf(0.75f, 1f, 1.25f, 1.5f, 2f)
 
@@ -155,6 +159,7 @@ fun PlayerScreen(
     val attempts = remember { intArrayOf(0) }
     val token = remember { intArrayOf(0) }
     val startedOk = remember { booleanArrayOf(false) }
+    val trackPrefs = remember { TrackPrefsStore(context) }
     val triedUrls = remember { HashSet<String>() }
     val alternates by rememberUpdatedState(alternatesFor)
 
@@ -333,6 +338,22 @@ fun PlayerScreen(
             exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
                 .setPreferredTextLanguage(audioLang.ifBlank { "en" })
                 .build()
+        }
+        // Audio and subtitle choices you made earlier for this show or film.
+        val base = trackBase(cur)
+        val savedAudio = trackPrefs.audio(base)
+        val savedSub = trackPrefs.sub(base)
+        if (savedAudio != null || savedSub != null) {
+            val b = exo.trackSelectionParameters.buildUpon()
+                .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+            if (savedAudio != null) b.setPreferredAudioLanguage(savedAudio)
+            if (savedSub == "off") {
+                b.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+            } else if (savedSub != null) {
+                b.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).setPreferredTextLanguage(savedSub)
+            }
+            exo.trackSelectionParameters = b.build()
         }
         val resumeAt = startPositionFor(cur)
         if (resumeAt > 0L) exo.setMediaItem(mediaItem, resumeAt) else exo.setMediaItem(mediaItem)
@@ -757,6 +778,7 @@ fun PlayerScreen(
                     exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
                         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
                         .build()
+                    trackPrefs.saveSub(trackBase(item), "off")
                     picker = null
                 }
             }
@@ -766,6 +788,11 @@ fun PlayerScreen(
                         .setTrackTypeDisabled(opt.group.type, false)
                         .setOverrideForType(TrackSelectionOverride(opt.group.mediaTrackGroup, opt.index))
                         .build()
+                    // Remember the language for the rest of this show.
+                    opt.group.getTrackFormat(opt.index).language?.takeIf { it != "und" }?.let { lang ->
+                        if (type == C.TRACK_TYPE_AUDIO) trackPrefs.saveAudio(trackBase(item), lang)
+                        else trackPrefs.saveSub(trackBase(item), lang)
+                    }
                     picker = null
                 }
             }

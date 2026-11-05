@@ -395,6 +395,8 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
         addons: List<StremioAddon>,
         type: String,
         videoId: String,
+        /** The quality and size choices from Settings. */
+        pref: StreamPrefs = StreamPrefs(),
         /** Called each time another addon answers, with everything found so far (best first). */
         onUpdate: ((StremioStreams) -> Unit)? = null,
     ): StremioStreams = withContext(Dispatchers.IO) {
@@ -416,7 +418,10 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
                 }
             }
             // Best first, so quick play (and the top of the list) picks the most watchable one.
-            return StremioStreams(playable.sortedByDescending { score(it) }, torrents, failed)
+            // Over the size limit is dropped, unless that would leave nothing to play.
+            val limit = pref.maxGb * 1_000_000_000L
+            val allowed = if (pref.maxGb > 0) playable.filter { it.sizeBytes == null || it.sizeBytes <= limit } else playable
+            return StremioStreams((allowed.ifEmpty { playable }).sortedByDescending { score(it, pref) }, torrents, failed)
         }
 
         coroutineScope {
@@ -439,7 +444,7 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
      * 1080p is favoured because it plays smoothly on nearly every TV; 4K comes next, then 720p.
      * Cinema recordings and Dolby Vision (which many sets can't show properly) are pushed down.
      */
-    private fun score(s: StremioStream): Int {
+    private fun score(s: StremioStream, pref: StreamPrefs = StreamPrefs()): Int {
         val t = (s.name + " " + s.description).lowercase()
         var n = when {
             "1080" in t -> 400
@@ -447,6 +452,12 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
             "720" in t -> 200
             "480" in t -> 100
             else -> 150
+        }
+        val is4k = "2160" in t || "4k" in t || "uhd" in t
+        when (pref.quality) {
+            1 -> if (is4k) n -= 500 // up to 1080p
+            2 -> if (is4k || "1080" in t) n -= 500 // up to 720p
+            3 -> if (is4k) n += 250 // best available
         }
         if (Regex("\\b(cam|camrip|hdcam|ts|telesync|tc|hdts)\\b").containsMatchIn(t)) n -= 350
         if ("dolby vision" in t || Regex("\\bdv\\b").containsMatchIn(t)) n -= 60
@@ -613,3 +624,6 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
         }
     }
 }
+
+/** What you asked for in Settings: [quality] 0 = automatic, 1 = up to 1080p, 2 = up to 720p, 3 = best (4K); [maxGb] 0 = no limit. */
+data class StreamPrefs(val quality: Int = 0, val maxGb: Int = 0)
