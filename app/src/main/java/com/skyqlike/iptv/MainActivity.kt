@@ -50,6 +50,7 @@ import com.skyqlike.iptv.ui.theme.Palette
 import com.skyqlike.iptv.ui.theme.ReelTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** What the player has been asked to play: a list of things, and which one to start on. */
 private data class PlayRequest(val items: List<PlayItem>, val start: Int)
@@ -213,20 +214,35 @@ private fun ReelApp(context: Context) {
             stremioRepo.streams(addons, type, videoId)
         },
         onPlay = { title, video, stream ->
-            playRequest = PlayRequest(
-                listOf(
-                    PlayItem(
-                        key = if (video != null) "stremio:series:${title.id}|${video.id}" else "stremio:${title.type}:${title.id}",
-                        title = title.name,
-                        subtitle = if (video != null) "S${video.season} E${video.episode}  ${video.title}" else title.year,
-                        url = stream.url,
-                        kind = if (video != null) PlayKind.EPISODE else PlayKind.MOVIE,
-                        imageUrl = title.poster,
-                        externalId = video?.id,
-                    )
-                ),
-                0,
-            )
+            val addons = (stremioState as? StremioState.Ready)?.home?.addons ?: emptyList()
+            val videoId = video?.id ?: title.id
+            val subType = if (video != null) "series" else title.type
+            val canFind = addons.any { it.supports("subtitles", subType, videoId) }
+            scope.launch {
+                // Ask subtitle addons (like OpenSubtitles) for files; never wait more than a few seconds.
+                if (canFind) note = "Finding subtitles..."
+                val subs = if (canFind) {
+                    runCatching {
+                        withTimeoutOrNull(6000L) { stremioRepo.subtitles(addons, subType, videoId) }
+                    }.getOrNull() ?: emptyList()
+                } else emptyList()
+                if (canFind) note = null
+                playRequest = PlayRequest(
+                    listOf(
+                        PlayItem(
+                            key = if (video != null) "stremio:series:${title.id}|${video.id}" else "stremio:${title.type}:${title.id}",
+                            title = title.name,
+                            subtitle = if (video != null) "S${video.season} E${video.episode}  ${video.title}" else title.year,
+                            url = stream.url,
+                            kind = if (video != null) PlayKind.EPISODE else PlayKind.MOVIE,
+                            imageUrl = title.poster,
+                            externalId = video?.id,
+                            subtitles = subs,
+                        )
+                    ),
+                    0,
+                )
+            }
         },
     )
 

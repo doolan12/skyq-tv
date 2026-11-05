@@ -1,6 +1,7 @@
 package com.skyqlike.iptv.data.stremio
 
 import com.skyqlike.iptv.data.Http
+import com.skyqlike.iptv.data.model.ExternalSubtitle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -414,6 +415,84 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
             }
         }
         return playable to torrents
+    }
+
+    // ------------------------------------------------------------------ subtitles
+
+    /**
+     * Asks every addon that offers subtitles (such as OpenSubtitles) for this movie or episode.
+     * Keeps a few English ones and one of each other language, and drops any link that doesn't answer,
+     * because a dead subtitle link could otherwise stop the picture.
+     */
+    suspend fun subtitles(addons: List<StremioAddon>, type: String, videoId: String): List<ExternalSubtitle> =
+        withContext(Dispatchers.IO) {
+            val targets = addons.filter { it.supports("subtitles", type, videoId) }
+            if (targets.isEmpty()) return@withContext emptyList()
+
+            val found = coroutineScope {
+                targets.map { a -> async { runCatching { fetchSubtitles(a, type, videoId) }.getOrDefault(emptyList()) } }.awaitAll()
+            }.flatten().distinctBy { it.url }
+
+            val english = found.filter { isEnglish(it.language) }.take(3)
+            val others = found.filterNot { isEnglish(it.language) }.distinctBy { it.language.lowercase() }.take(3)
+            val picked = english + others
+
+            val answered = coroutineScope {
+                picked.map { s -> async { runCatching { Http.get(s.url, 8_000) }.isSuccess } }.awaitAll()
+            }
+            val good = picked.filterIndexed { i, _ -> answered[i] }
+
+            // Repeated languages are numbered: English, English 2, English 3.
+            val seen = HashMap<String, Int>()
+            good.map { s ->
+                val name = languageName(s.language)
+                val n = (seen[name] ?: 0) + 1
+                seen[name] = n
+                s.copy(label = if (n > 1) "$name $n" else name)
+            }
+        }
+
+    private fun fetchSubtitles(addon: StremioAddon, type: String, id: String): List<ExternalSubtitle> {
+        val url = "${addon.baseUrl}/subtitles/${enc(type)}/${enc(id)}.json"
+        val arr = JSONObject(Http.get(url, 10_000)).optJSONArray("subtitles") ?: return emptyList()
+        val out = ArrayList<ExternalSubtitle>()
+        for (i in 0 until arr.length()) {
+            val s = arr.optJSONObject(i) ?: continue
+            val link = str(s, "url") ?: continue
+            if (!link.startsWith("http://", true) && !link.startsWith("https://", true)) continue
+            out += ExternalSubtitle(link, str(s, "lang") ?: "und", "")
+        }
+        return out
+    }
+
+    private fun isEnglish(lang: String) =
+        lang.equals("eng", true) || lang.equals("en", true) || lang.startsWith("en-", true)
+
+    private fun languageName(code: String): String {
+        val names = mapOf(
+            "English" to "eng en",
+            "Spanish" to "spa es",
+            "French" to "fre fra fr",
+            "German" to "ger deu de",
+            "Italian" to "ita it",
+            "Portuguese" to "por pob pt",
+            "Dutch" to "dut nld nl",
+            "Russian" to "rus ru",
+            "Arabic" to "ara ar",
+            "Chinese" to "chi zho zh",
+            "Japanese" to "jpn ja",
+            "Korean" to "kor ko",
+            "Hindi" to "hin hi",
+            "Turkish" to "tur tr",
+            "Polish" to "pol pl",
+            "Greek" to "gre ell el",
+            "Swedish" to "swe sv",
+            "Danish" to "dan da",
+            "Norwegian" to "nor no",
+            "Finnish" to "fin fi",
+        )
+        val c = code.lowercase().substringBefore('-')
+        return names.entries.firstOrNull { c in it.value.split(' ') }?.key ?: code.uppercase()
     }
 
     // ------------------------------------------------------------------ helpers

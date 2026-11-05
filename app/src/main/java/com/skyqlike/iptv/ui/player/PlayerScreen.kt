@@ -2,6 +2,7 @@
 
 package com.skyqlike.iptv.ui.player
 
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
@@ -56,6 +57,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
@@ -243,7 +245,29 @@ fun PlayerScreen(
         buffering = true
         positionMs = 0L
         durationMs = 0L
-        val mediaItem = MediaItem.fromUri(cur.url)
+        val mediaItem = MediaItem.Builder()
+            .setUri(cur.url)
+            .setSubtitleConfigurations(
+                cur.subtitles.map { s ->
+                    val path = s.url.substringBefore('?').lowercase()
+                    val mime = when {
+                        path.endsWith(".vtt") -> MimeTypes.TEXT_VTT
+                        path.endsWith(".ass") || path.endsWith(".ssa") -> MimeTypes.TEXT_SSA
+                        else -> MimeTypes.APPLICATION_SUBRIP
+                    }
+                    MediaItem.SubtitleConfiguration.Builder(Uri.parse(s.url))
+                        .setMimeType(mime)
+                        .setLanguage(s.language)
+                        .setLabel(s.label)
+                        .build()
+                }
+            )
+            .build()
+        if (subtitlesOn && cur.subtitles.isNotEmpty()) {
+            exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
+                .setPreferredTextLanguage(audioLang.ifBlank { "en" })
+                .build()
+        }
         val resumeAt = startPositionFor(cur)
         if (resumeAt > 0L) exo.setMediaItem(mediaItem, resumeAt) else exo.setMediaItem(mediaItem)
         exo.prepare()
