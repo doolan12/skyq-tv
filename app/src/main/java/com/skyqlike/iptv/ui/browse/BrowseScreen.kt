@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -660,14 +661,24 @@ fun BrowseScreen(
             if (isTv) {
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     val bannerHeight = (maxHeight * 0.42f).coerceIn(150.dp, 300.dp)
-                    Column(Modifier.fillMaxSize()) {
-                        bannerBox(bannerHeight)
-                        LazyColumn(
-                            Modifier.weight(1f).fillMaxWidth(),
-                            state = ui.list,
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            contentPadding = PaddingValues(bottom = 40.dp),
-                            content = listBody,
+                    Box(Modifier.fillMaxSize()) {
+                        Column(Modifier.fillMaxSize()) {
+                            bannerBox(bannerHeight)
+                            LazyColumn(
+                                Modifier.weight(1f).fillMaxWidth(),
+                                state = ui.list,
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                contentPadding = PaddingValues(bottom = 40.dp),
+                                content = listBody,
+                            )
+                        }
+                        // Rows fade in as they slide up under the banner, instead of being cut off by a hard line.
+                        Box(
+                            Modifier
+                                .offset(y = bannerHeight)
+                                .fillMaxWidth()
+                                .height(36.dp)
+                                .background(Brush.verticalGradient(listOf(Palette.Background, Color.Transparent))),
                         )
                     }
                 }
@@ -822,7 +833,7 @@ private fun Billboard(
         )
         Box(
             Modifier.fillMaxSize().background(
-                Brush.verticalGradient(0f to Color.Transparent, 0.7f to Color.Transparent, 1f to Palette.Background)
+                Brush.verticalGradient(0f to Color.Transparent, 0.4f to Color.Transparent, 0.8f to Palette.Background.copy(alpha = 0.85f), 1f to Palette.Background)
             )
         )
         // Carousel controls: back, dots showing which title this is, forward. Swiping the banner works too.
