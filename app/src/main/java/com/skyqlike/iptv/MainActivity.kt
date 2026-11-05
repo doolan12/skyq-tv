@@ -51,6 +51,8 @@ import com.skyqlike.iptv.ui.detail.EpisodeState
 import com.skyqlike.iptv.ui.player.PlayerScreen
 import com.skyqlike.iptv.ui.profiles.ProfilePicker
 import com.skyqlike.iptv.ui.settings.SettingsScreen
+import com.skyqlike.iptv.ui.shuffle.PlaySomethingScreen
+import com.skyqlike.iptv.ui.shuffle.ShuffleState
 import com.skyqlike.iptv.ui.stremio.AccountPage
 import com.skyqlike.iptv.ui.stremio.StremioActions
 import com.skyqlike.iptv.ui.theme.Palette
@@ -107,6 +109,8 @@ private fun ReelApp(context: Context) {
     var stremioState by remember { mutableStateOf<StremioState>(StremioState.Idle) }
     var detail by remember { mutableStateOf<DetailRequest?>(null) }
     var showSettings by remember { mutableStateOf(false) }
+    var showShuffle by remember { mutableStateOf(false) }
+    val shuffleState = remember { ShuffleState() }
     var playRequest by remember { mutableStateOf<PlayRequest?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
     var trending by remember { mutableStateOf<Trending?>(null) }
@@ -384,6 +388,18 @@ private fun ReelApp(context: Context) {
                 onOpen = { detail = DetailRequest(it, false) },
                 onBack = { detail = null },
             )
+            showShuffle -> PlaySomethingScreen(
+                state = shuffleState,
+                items = ((stremioState as? StremioState.Ready)?.home?.rows?.flatMap { it.items } ?: emptyList()) +
+                    (trending?.movies ?: emptyList()) + (trending?.series ?: emptyList()),
+                favourites = favourites,
+                watched = history,
+                actions = actions,
+                onPlay = { detail = DetailRequest(it, true) },
+                onPlayEpisode = { item, episodeId -> detail = DetailRequest(item, false, episodeId) },
+                onInfo = { detail = DetailRequest(it, false) },
+                onClose = { showShuffle = false },
+            )
             else -> BrowseScreen(
                 ui = browseUi,
                 profile = current,
@@ -404,6 +420,7 @@ private fun ReelApp(context: Context) {
                 },
                 onOpenEpisode = { item, episodeId -> detail = DetailRequest(item, false, episodeId) },
                 onSettings = { showSettings = true },
+                onShuffle = { showShuffle = true },
                 onSwitchProfile = {
                     resetNavigation()
                     profile = null

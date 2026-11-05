@@ -119,6 +119,8 @@ fun BrowseScreen(
     previewsOn: Boolean,
     onSettings: () -> Unit,
     onSwitchProfile: () -> Unit,
+    /** Opens the Play Something screen. */
+    onShuffle: () -> Unit,
 ) {
     val tab = ui.tab
     val browsing = tab == TAB_HOME || tab == TAB_SERIES || tab == TAB_MOVIES
@@ -260,11 +262,11 @@ fun BrowseScreen(
 
     when (state) {
         is StremioState.Idle, is StremioState.Loading -> Column(Modifier.fillMaxSize()) {
-            TopBar(tab, selectTab, profile, onSettings, onSwitchProfile)
+            TopBar(tab, selectTab, profile, onSettings, onSwitchProfile, onShuffle)
             Note("Loading your addons...")
         }
         is StremioState.Error -> Column(Modifier.fillMaxSize()) {
-            TopBar(tab, selectTab, profile, onSettings, onSwitchProfile)
+            TopBar(tab, selectTab, profile, onSettings, onSwitchProfile, onShuffle)
             Column(Modifier.padding(horizontal = 48.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(state.message, fontSize = 17.sp, color = Palette.TextSecondary)
                 ActionButton("Try again", Modifier.width(150.dp), accent = true) { actions.onNeedData() }
@@ -481,7 +483,7 @@ fun BrowseScreen(
                                 },
                             )
                         }
-                        TopBar(tab, selectTab, profile, onSettings, onSwitchProfile, Modifier.align(Alignment.TopStart))
+                        TopBar(tab, selectTab, profile, onSettings, onSwitchProfile, onShuffle, Modifier.align(Alignment.TopStart))
                     }
                 }
                 if (genreList.isNotEmpty()) {
@@ -549,6 +551,7 @@ private fun TopBar(
     profile: Profile,
     onSettings: () -> Unit,
     onSwitchProfile: () -> Unit,
+    onShuffle: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -575,6 +578,7 @@ private fun TopBar(
         ) {
             TabNames.forEachIndexed { i, label -> NavItem(label, tab == i) { onTab(i) } }
         }
+        NavItem("Shuffle", false) { onShuffle() }
         NavItem("Settings", false) { onSettings() }
         FocusTile(
             onClick = onSwitchProfile,
