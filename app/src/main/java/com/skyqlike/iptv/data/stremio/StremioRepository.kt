@@ -44,6 +44,33 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
         Result.failure(Exception(friendlyLoginError(firstError)))
     }
 
+    /**
+     * The titles saved in your Stremio library (not removed, not just recently opened). Read only:
+     * this never changes anything in your Stremio account.
+     */
+    suspend fun library(authKey: String): Result<List<StremioItem>> = withContext(Dispatchers.IO) {
+        try {
+            val body = JSONObject()
+                .put("authKey", authKey).put("collection", "libraryItem")
+                .put("ids", JSONArray()).put("all", true)
+            val reply = JSONObject(Http.post("$apiBase/api/datastoreGet", body.toString(), 60_000))
+            val arr = reply.optJSONArray("result")
+                ?: return@withContext Result.failure(Exception(apiError(reply) ?: "Stremio didn't send your library."))
+            val items = (0 until arr.length()).mapNotNull { i ->
+                val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                if (o.optBoolean("removed") || o.optBoolean("temp")) return@mapNotNull null
+                val type = str(o, "type") ?: return@mapNotNull null
+                if (type != "movie" && type != "series") return@mapNotNull null
+                val id = str(o, "_id") ?: return@mapNotNull null
+                val name = str(o, "name") ?: return@mapNotNull null
+                StremioItem(id = id, type = type, name = name, poster = str(o, "poster"), background = str(o, "background"))
+            }
+            Result.success(items)
+        } catch (e: Exception) {
+            Result.failure(Exception(Http.friendly(e)))
+        }
+    }
+
     private fun friendlyLoginError(msg: String?): String {
         val m = msg?.lowercase().orEmpty()
         return when {

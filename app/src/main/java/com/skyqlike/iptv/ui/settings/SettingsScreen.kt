@@ -13,6 +13,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -66,6 +68,9 @@ fun SettingsScreen(
     onSwitchProfile: () -> Unit,
     onBack: () -> Unit,
 ) {
+    var importing by remember { mutableStateOf(false) }
+    var importNote by remember { mutableStateOf("") }
+    val importScope = rememberCoroutineScope()
     var page by remember { mutableIntStateOf(0) } // 0 = the list, 1 = account and addons
     BackHandler(enabled = page == 0) { onBack() }
 
@@ -214,6 +219,20 @@ fun SettingsScreen(
                 fontSize = 13.sp,
                 color = Palette.TextSecondary,
             )
+        }
+        if (session.signedIn) {
+            item {
+                SettingRow("Import My List from Stremio", importNote) {
+                    if (!importing) {
+                        importing = true
+                        importNote = "Working..."
+                        importScope.launch {
+                            importNote = runCatching { actions.onImportLibrary() }.getOrDefault("Couldn't reach Stremio.")
+                            importing = false
+                        }
+                    }
+                }
+            }
         }
         item { SettingRow("Clear Continue Watching", "") { onClearHistory() } }
         item { SettingRow("Switch profile", "") { onSwitchProfile() } }

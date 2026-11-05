@@ -20,5 +20,7 @@ class StremioActions(
     val loadDetails: suspend (StremioItem) -> StremioItem,
     /** Finds streams. [onUpdate] is called as each addon answers, so playback can start before the slowest one finishes. */
     val loadStreams: suspend (type: String, videoId: String, onUpdate: (StremioStreams) -> Unit) -> StremioStreams,
+    /** Adds the titles saved in your Stremio library to My List. Returns a message to show. */
+    val onImportLibrary: suspend () -> String,
     val onPlay: (item: StremioItem, video: StremioVideo?, stream: StremioStream) -> Unit,
 )

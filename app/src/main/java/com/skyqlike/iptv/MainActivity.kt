@@ -246,6 +246,19 @@ private fun ReelApp(context: Context) {
             val addons = (stremioState as? StremioState.Ready)?.home?.addons ?: emptyList()
             stremioRepo.search(addons, query).let { found -> if (profile?.kids == true) KidsFilter.filter(found) else found }
         },
+        onImportLibrary = {
+            stremioRepo.library(stremio.authKey).fold(
+                onSuccess = { found ->
+                    val have = favourites.map { it.type + ":" + it.id }.toSet()
+                    val fresh = found.filter { (it.type + ":" + it.id) !in have }
+                    favourites = favourites + fresh
+                    favStore.save(favourites)
+                    if (fresh.isEmpty()) "Nothing new"
+                    else "Added ${fresh.size} title(s)"
+                },
+                onFailure = { it.message ?: "Couldn't read your Stremio library." },
+            )
+        },
         onToggleFavourite = { title ->
             val had = favourites.any { it.type == title.type && it.id == title.id }
             favourites = if (had) {
