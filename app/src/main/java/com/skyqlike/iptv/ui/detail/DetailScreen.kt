@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -116,13 +117,6 @@ fun DetailScreen(
                         Text(info.name, fontSize = 42.sp, fontWeight = FontWeight.ExtraBold, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         MetaLine(info.year, info.runtime, info.rating, fontSize = 15.sp)
                         if (genreLine.isNotBlank()) Text(genreLine, fontSize = 15.sp, color = Color(0xFFD0D0D8))
-                        Text(
-                            info.description.ifBlank { "No description." },
-                            fontSize = 15.sp,
-                            color = Color(0xFFC0C0C8),
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis,
-                        )
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 6.dp)) {
                             ActionButton(
                                 if (episodes.isEmpty()) "Loading..." else "Play S$current E${episodes.first().episode}",
@@ -135,6 +129,13 @@ fun DetailScreen(
                             if (info.trailerId != null) ActionButton("Trailer", Modifier.width(130.dp)) { showTrailer = true }
                             ActionButton("Back", Modifier.width(110.dp)) { onBack() }
                         }
+                        Text(
+                            info.description.ifBlank { "No description." },
+                            fontSize = 15.sp,
+                            color = Color(0xFFC0C0C8),
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                 }
                 if (seasons.size > 1) {
@@ -183,19 +184,13 @@ fun DetailScreen(
             }
         } else {
             Column(
-                Modifier.align(Alignment.CenterStart).fillMaxWidth(0.55f).padding(start = 56.dp),
+                // Scrolls if the screen is short (like a phone on its side), so nothing is ever out of reach.
+                Modifier.align(Alignment.CenterStart).fillMaxWidth(0.55f).verticalScroll(rememberScrollState()).padding(start = 56.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(info.name, fontSize = 44.sp, fontWeight = FontWeight.ExtraBold, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 MetaLine(info.year, info.runtime, info.rating, fontSize = 16.sp)
                 if (genreLine.isNotBlank()) Text(genreLine, fontSize = 16.sp, color = Color(0xFFD0D0D8))
-                Text(
-                    info.description.ifBlank { "No description." },
-                    fontSize = 17.sp,
-                    color = Color(0xFFC0C0C8),
-                    maxLines = 6,
-                    overflow = TextOverflow.Ellipsis,
-                )
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 8.dp)) {
                     ActionButton(
                         "Play",
@@ -208,6 +203,13 @@ fun DetailScreen(
                     if (info.trailerId != null) ActionButton("Trailer", Modifier.width(130.dp)) { showTrailer = true }
                     ActionButton("Back", Modifier.width(110.dp)) { onBack() }
                 }
+                Text(
+                    info.description.ifBlank { "No description." },
+                    fontSize = 17.sp,
+                    color = Color(0xFFC0C0C8),
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
 
