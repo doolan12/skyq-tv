@@ -19,7 +19,7 @@ android {
     // A permanent signing key, so new versions install over the old one.
     // It only switches on when the build has the key file and password (GitHub secrets); otherwise the default debug key is used.
     val keystorePath = System.getenv("KEYSTORE_FILE")
-    val keystorePass = System.getenv("KEYSTORE_PASSWORD")
+    val keystorePass = System.getenv("KEYSTORE_PASSWORD")?.trim()
     val useOwnKey = !keystorePath.isNullOrBlank() && !keystorePass.isNullOrBlank() && file(keystorePath).exists()
     if (useOwnKey) {
         signingConfigs {
