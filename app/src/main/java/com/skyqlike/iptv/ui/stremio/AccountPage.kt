@@ -52,7 +52,7 @@ fun AccountPage(
 
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 48.dp, vertical = 28.dp),
+        contentPadding = PaddingValues(horizontal = com.skyqlike.iptv.ui.common.pagePad(), vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {

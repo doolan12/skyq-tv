@@ -2,6 +2,8 @@ package com.skyqlike.iptv.ui.profiles
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -100,7 +102,7 @@ fun ProfilePicker(
     }
 
     Column(
-        Modifier.fillMaxSize().background(Palette.Background).verticalScroll(rememberScrollState()).padding(horizontal = 48.dp, vertical = 12.dp),
+        Modifier.fillMaxSize().background(Palette.Background).verticalScroll(rememberScrollState()).padding(horizontal = com.skyqlike.iptv.ui.common.pagePad(), vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -122,13 +124,13 @@ fun ProfilePicker(
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Bottom) {
                     ProfileAvatar(preview, Modifier.size(64.dp), 30.sp)
-                    Box(Modifier.width(360.dp)) { LabeledField("Name", name) { name = it } }
+                    Box(Modifier.weight(1f).widthIn(max = 360.dp)) { LabeledField("Name", name) { name = it } }
                 }
                 Spacer(Modifier.height(8.dp))
                 Text("Picture", fontSize = 13.sp, color = Palette.TextSecondary)
                 Spacer(Modifier.height(4.dp))
                 androidx.compose.foundation.lazy.LazyRow(
-                    modifier = Modifier.width(520.dp),
+                    modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(AvatarChoices.size) { i ->
@@ -150,7 +152,7 @@ fun ProfilePicker(
                     }
                 }
                 Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
                     ActionButton("Colour", Modifier.width(100.dp)) { color = (color + 1) % ProfileColors.size }
                     if (!isEdit) {
                         ActionButton(if (kids) "Kids: On" else "Kids: Off", Modifier.width(110.dp), accent = kids) { kids = !kids }
@@ -205,7 +207,7 @@ fun ProfilePicker(
             else -> {
                 Text("Who's watching?", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
                 Spacer(Modifier.height(28.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.Top) {
+                Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.Top, modifier = Modifier.horizontalScroll(rememberScrollState())) {
                     profiles.forEachIndexed { i, p ->
                         val editAction: () -> Unit = {
                             name = p.name

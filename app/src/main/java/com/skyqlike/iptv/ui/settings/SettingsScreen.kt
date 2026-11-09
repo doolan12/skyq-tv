@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -106,7 +107,7 @@ fun SettingsScreen(
 
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 48.dp, vertical = 28.dp),
+        contentPadding = PaddingValues(horizontal = com.skyqlike.iptv.ui.common.pagePad(), vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item { Text("Settings", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary) }
@@ -297,19 +298,21 @@ private fun onOff(on: Boolean) = if (on) "On" else "Off"
 
 @Composable
 private fun SettingRow(label: String, value: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val narrow = com.skyqlike.iptv.ui.common.isNarrowScreen()
     FocusTile(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth(0.75f).height(56.dp),
+        modifier = modifier.then(if (narrow) Modifier.fillMaxWidth() else Modifier.fillMaxWidth(0.75f)).heightIn(min = 56.dp),
         corner = 8.dp,
         focusedScale = 1.02f,
     ) {
         Row(
-            Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 18.dp),
+            Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text(label, fontSize = 17.sp, color = Palette.TextPrimary, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(label, fontSize = if (narrow) 15.sp else 17.sp, color = Palette.TextPrimary, modifier = Modifier.weight(1f), maxLines = if (narrow) 3 else 1, overflow = TextOverflow.Ellipsis)
             if (value.isNotBlank()) {
-                Text(value, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(value, fontSize = if (narrow) 14.sp else 16.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
     }

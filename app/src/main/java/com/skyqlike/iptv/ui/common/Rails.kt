@@ -37,6 +37,14 @@ import com.skyqlike.iptv.ui.theme.Palette
 /** The gap at the left and right edge of rows and text. Wide on a TV, narrow on a phone. */
 val LocalSidePad = androidx.compose.runtime.compositionLocalOf { 48.dp }
 
+/** True on a narrow screen such as a phone held upright. */
+@Composable
+fun isNarrowScreen(): Boolean = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 600
+
+/** The side gap for a whole page: slim on a phone, wide on a TV. */
+@Composable
+fun pagePad(): Dp = if (isNarrowScreen()) 16.dp else 48.dp
+
 /** One tile in a row: a movie, a series, or something you were watching. */
 data class HomeTile(
     val id: String,

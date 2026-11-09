@@ -50,7 +50,7 @@ fun AddonHealthPage(health: List<AddonHealth>, streamStats: List<StreamStat>, on
 
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 48.dp, vertical = 28.dp),
+        contentPadding = PaddingValues(horizontal = com.skyqlike.iptv.ui.common.pagePad(), vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item { Text("Addon health", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary) }

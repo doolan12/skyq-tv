@@ -484,7 +484,7 @@ private fun StreamPicker(item: StremioItem, pick: Pick, actions: StremioActions,
 
     val label = pick.video?.let { "S${it.season} E${it.episode}  ${it.title}" } ?: item.year
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 28.dp)) {
+    Column(Modifier.fillMaxSize().padding(horizontal = com.skyqlike.iptv.ui.common.pagePad(), vertical = 20.dp)) {
         Text("Choose a stream", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
         Text(
             item.name + if (label.isNotBlank()) "  -  $label" else "",

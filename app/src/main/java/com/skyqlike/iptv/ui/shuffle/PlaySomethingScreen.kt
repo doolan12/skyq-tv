@@ -226,6 +226,84 @@ fun PlaySomethingScreen(
         }
     }
 
+    val narrow = com.skyqlike.iptv.ui.common.isNarrowScreen()
+    val resultPanel: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {
+            val pick = state.result
+            when {
+                state.phase == 1 -> Text("Looking for something...", fontSize = 18.sp, color = Palette.TextSecondary, modifier = Modifier.align(Alignment.Center))
+                state.phase == 2 -> Text(
+                    "Nothing matches those choices. Loosen one and try again.",
+                    fontSize = 17.sp,
+                    color = Palette.TextSecondary,
+                    modifier = Modifier.align(Alignment.Center),
+                )
+                state.phase == 3 && pick != null -> PickCard(pick, onPlay, onPlayEpisode, onInfo)
+                else -> Text(
+                    "Your pick shows up here.",
+                    fontSize = 17.sp,
+                    color = Palette.TextSecondary,
+                    modifier = Modifier.align(Alignment.Center),
+                )
+            }
+    }
+    if (narrow) {
+        // Phone: one scrolling page. The button and your pick come first, the choices are underneath.
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            item { Text("Play Something", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary) }
+            item {
+                ActionButton(
+                    if (state.phase == 3) "Shuffle again" else "Pick something for me",
+                    Modifier.fillMaxWidth().focusRequester(firstFocus),
+                    accent = true,
+                    accentColor = Color.White,
+                    textColor = Color.Black,
+                ) { shuffle() }
+            }
+            item {
+                Box(
+                    Modifier.fillMaxWidth().height(250.dp).clip(RoundedCornerShape(12.dp)).background(Color(0x14FFFFFF)).padding(14.dp),
+                ) { resultPanel() }
+            }
+            item { Text("Your choices", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextSecondary, modifier = Modifier.padding(top = 6.dp)) }
+            item { ChoiceRow("Show me", TypeNames[f.type]) { change(f.copy(type = (f.type + 1) % TypeNames.size)) } }
+            item {
+                ChoiceRow("Genre", f.genre ?: "Any") {
+                    val list = listOf<String?>(null) + genres
+                    val at = list.indexOf(f.genre).coerceAtLeast(0)
+                    change(f.copy(genre = list[(at + 1) % list.size]))
+                }
+            }
+            item {
+                ChoiceRow("Length (movies)", LengthNames[f.length]) { change(f.copy(length = (f.length + 1) % LengthNames.size)) }
+            }
+            item {
+                ChoiceRow("Already watched", if (f.unwatchedOnly) "Hide them" else "Include them") {
+                    change(f.copy(unwatchedOnly = !f.unwatchedOnly))
+                }
+            }
+            item {
+                ChoiceRow("Choose from", if (f.myListOnly) "My List only" else "Everything") {
+                    change(f.copy(myListOnly = !f.myListOnly))
+                }
+            }
+            item {
+                ChoiceRow("IMDb score", if (f.minRating == 0) "Any" else "${f.minRating}+") {
+                    val at = RatingChoices.indexOf(f.minRating).coerceAtLeast(0)
+                    change(f.copy(minRating = RatingChoices[(at + 1) % RatingChoices.size]))
+                }
+            }
+            if (f.length != 0 && f.type == 2) {
+                item { Text("Length only applies to movies, so series are left out while a length is chosen.", fontSize = 13.sp, color = Palette.TextSecondary) }
+            }
+            item { ActionButton("Back", Modifier.fillMaxWidth()) { onClose() } }
+        }
+        return
+    }
+
     Row(Modifier.fillMaxSize().padding(horizontal = 40.dp, vertical = 24.dp), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
         // Left: the choices.
         LazyColumn(
