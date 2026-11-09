@@ -26,6 +26,16 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.Velocity
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.foundation.layout.navigationBarsPadding
+import com.skyqlike.iptv.ui.common.LocalSidePad
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -134,6 +144,7 @@ fun BrowseScreen(
     onPlay: (StremioItem) -> Unit,
     /** Opens a series and starts this episode (used by the "Up next" tiles in Continue Watching). */
     onOpenEpisode: (StremioItem, String) -> Unit,
+    onRefresh: () -> Unit = {},
     /** Press and hold on a Continue Watching tile removes that title from the row. */
     onRemoveContinue: (StremioItem) -> Unit,
     /** Whether a silent trailer plays behind the banner. */
@@ -296,18 +307,28 @@ fun BrowseScreen(
         }
         is StremioState.Error -> Column(Modifier.fillMaxSize()) {
             TopBar(tab, selectTab, profile, onSettings, onSwitchProfile, onShuffle)
-            Column(Modifier.padding(horizontal = 48.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.padding(horizontal = LocalSidePad.current), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(state.message, fontSize = 17.sp, color = Palette.TextSecondary)
                 ActionButton("Try again", Modifier.width(150.dp), accent = true) { actions.onNeedData() }
             }
         }
         is StremioState.Ready -> {
+            val isTv = androidx.compose.ui.platform.LocalContext.current.let { c ->
+                c.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK) ||
+                    (c.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK) ==
+                    android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+            }
+            val config = LocalConfiguration.current
+            val phone = !isTv
+            val portrait = config.screenHeightDp > config.screenWidthDp
+            val posterW = if (phone && portrait) 112.dp else 130.dp
+            val posterH = if (phone && portrait) 168.dp else 195.dp
             val toggle: (StremioItem) -> Unit = { actions.onToggleFavourite(it) }
             val rails = ArrayList<RailSpec>()
 
             // Every title already shown on this screen, so later rows don't repeat it.
             val shownKeys = HashSet<String>()
-            fun add(title: String, items: List<StremioItem>, w: Dp = 130.dp, h: Dp = 195.dp) {
+            fun add(title: String, items: List<StremioItem>, w: Dp = posterW, h: Dp = posterH) {
                 items.forEach { shownKeys += it.type + ":" + it.id }
                 if (items.isNotEmpty()) rails += RailSpec(Rail(title, items.map { tileFor(it, onOpen, toggle, topPostersKey, onHeroFocus) }), w, h)
             }
@@ -323,7 +344,7 @@ fun BrowseScreen(
                 val live = (if (rowType == "movie") trending?.movies else trending?.series).orEmpty().take(10)
                 if (live.size >= 5) {
                     live.forEach { shownKeys += it.type + ":" + it.id }
-                    rails += RailSpec(Rail("Trending $word Today", live.map { tileFor(it, onOpen, toggle, topPostersKey, onHeroFocus) }), 130.dp, 195.dp, top10 = true)
+                    rails += RailSpec(Rail("Trending $word Today", live.map { tileFor(it, onOpen, toggle, topPostersKey, onHeroFocus) }), posterW, posterH, top10 = true)
                     return
                 }
                 val first = state.home.rows.firstOrNull { it.type == rowType } ?: return
@@ -331,7 +352,7 @@ fun BrowseScreen(
                 if (items.size < 5) return
                 usedForTop10 += first
                 items.forEach { shownKeys += it.type + ":" + it.id }
-                rails += RailSpec(Rail("Popular $word", items.map { tileFor(it, onOpen, toggle, topPostersKey, onHeroFocus) }), 130.dp, 195.dp, top10 = true)
+                rails += RailSpec(Rail("Popular $word", items.map { tileFor(it, onOpen, toggle, topPostersKey, onHeroFocus) }), posterW, posterH, top10 = true)
             }
 
             fun addContinue(filterType: String?) {
@@ -545,15 +566,10 @@ fun BrowseScreen(
 
             // On a TV the banner and top bar stay put and only the rows underneath scroll, so the banner is always
             // visible (and follows the poster you're on). On a phone the banner scrolls away with the page.
-            val isTv = androidx.compose.ui.platform.LocalContext.current.let { c ->
-                c.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK) ||
-                    (c.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK) ==
-                    android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
-            }
-            // The tabs, and under them a short strip about the title you have selected (it follows the poster you're on).
             val headerBox: @Composable () -> Unit = {
                 Column(Modifier.fillMaxWidth()) {
-                    TopBar(tab, selectTab, profile, onSettings, onSwitchProfile, onShuffle)
+                    if (phone) PhoneTopBar(profile, onSettings, onSwitchProfile, onShuffle)
+                    else TopBar(tab, selectTab, profile, onSettings, onSwitchProfile, onShuffle)
                     if (showBanner) {
                         val hero = focusedHero?.takeIf { browsing } ?: heroItems[heroIndex.coerceIn(0, heroItems.size - 1)]
                         InfoStrip(hero, compact = !isTv)
@@ -565,7 +581,7 @@ fun BrowseScreen(
                     item {
                         // One button that opens a menu of categories, instead of a long row of them.
                         var menuOpen by remember { mutableStateOf(false) }
-                        Row(Modifier.padding(horizontal = 48.dp, vertical = 6.dp)) {
+                        Row(Modifier.padding(horizontal = LocalSidePad.current, vertical = 6.dp)) {
                             ActionButton("Category: ${ui.genre ?: "All"}  \u25BE", Modifier.widthIn(min = 220.dp, max = 360.dp), accent = ui.genre != null) { menuOpen = true }
                         }
                         if (menuOpen) {
@@ -610,7 +626,7 @@ fun BrowseScreen(
                 if (tab == TAB_MY_LIST && favourites.isNotEmpty()) {
                     item {
                         Row(
-                            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 48.dp, vertical = 6.dp),
+                            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = LocalSidePad.current, vertical = 6.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             ActionButton(MyListTypeNames[ui.listType], Modifier.width(150.dp)) { ui.listType = (ui.listType + 1) % MyListTypeNames.size }
@@ -620,7 +636,7 @@ fun BrowseScreen(
                 }
                 if (tab == TAB_SEARCH) {
                     item {
-                        Box(Modifier.fillMaxWidth().padding(horizontal = 48.dp)) {
+                        Box(Modifier.fillMaxWidth().padding(horizontal = LocalSidePad.current)) {
                             LabeledField("Search movies and series", ui.query) { ui.query = it }
                         }
                     }
@@ -636,7 +652,7 @@ fun BrowseScreen(
                         item { Note("Trending right now") }
                         item {
                             androidx.compose.foundation.lazy.LazyRow(
-                                contentPadding = PaddingValues(horizontal = 48.dp),
+                                contentPadding = PaddingValues(horizontal = LocalSidePad.current),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
                                 items(ideas.size) { i ->
@@ -649,7 +665,7 @@ fun BrowseScreen(
                         item { Note("Recent searches") }
                         item {
                             androidx.compose.foundation.lazy.LazyRow(
-                                contentPadding = PaddingValues(horizontal = 48.dp),
+                                contentPadding = PaddingValues(horizontal = LocalSidePad.current),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
                                 items(recent.size) { i ->
@@ -680,15 +696,59 @@ fun BrowseScreen(
                     else RailRow(spec.rail, spec.width, spec.height)
                 }
             }
-            Column(Modifier.fillMaxSize()) {
-                headerBox()
-                LazyColumn(
-                    Modifier.weight(1f).fillMaxWidth(),
-                    state = ui.list,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(bottom = 40.dp),
-                    content = listBody,
-                )
+            // Pull the list down from the top (on a touch screen) to refresh Home.
+            val pull = remember { mutableFloatStateOf(0f) }
+            val pullConnection = remember {
+                object : NestedScrollConnection {
+                    override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                        if (pull.floatValue > 0f && available.y < 0f) {
+                            val d = maxOf(available.y, -pull.floatValue)
+                            pull.floatValue += d
+                            return Offset(0f, d)
+                        }
+                        return Offset.Zero
+                    }
+
+                    override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                        if (source == NestedScrollSource.Drag && available.y > 0f) {
+                            pull.floatValue = (pull.floatValue + available.y).coerceAtMost(420f)
+                        }
+                        return Offset.Zero
+                    }
+
+                    override suspend fun onPreFling(available: Velocity): Velocity {
+                        if (pull.floatValue > 220f) onRefresh()
+                        pull.floatValue = 0f
+                        return Velocity.Zero
+                    }
+                }
+            }
+            CompositionLocalProvider(LocalSidePad provides (if (phone) 16.dp else 48.dp)) {
+                Column(Modifier.fillMaxSize()) {
+                    headerBox()
+                    Box(Modifier.weight(1f).fillMaxWidth().then(if (phone) Modifier.nestedScroll(pullConnection) else Modifier)) {
+                        LazyColumn(
+                            Modifier.fillMaxSize(),
+                            state = ui.list,
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            contentPadding = PaddingValues(bottom = 24.dp),
+                            content = listBody,
+                        )
+                        if (pull.floatValue > 30f) {
+                            Text(
+                                if (pull.floatValue > 220f) "Release to refresh" else "Pull down to refresh",
+                                fontSize = 13.sp,
+                                color = Palette.TextPrimary,
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .padding(top = 6.dp)
+                                    .background(Color(0xCC000000), RoundedCornerShape(14.dp))
+                                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                            )
+                        }
+                    }
+                    if (phone) PhoneBottomBar(tab, selectTab)
+                }
             }
         }
     }
@@ -751,6 +811,52 @@ private fun TopBar(
     }
 }
 
+/** The phone's top strip: the name, Shuffle, Settings and who's watching. The tabs live along the bottom instead. */
+@Composable
+private fun PhoneTopBar(profile: Profile, onSettings: () -> Unit, onSwitchProfile: () -> Unit, onShuffle: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text("REELHOUSE", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = Palette.Accent, letterSpacing = 2.sp, modifier = Modifier.weight(1f))
+        NavItem("Shuffle", false, 84.dp, 14.sp) { onShuffle() }
+        NavItem("Settings", false, 84.dp, 14.sp) { onSettings() }
+        FocusTile(
+            onClick = onSwitchProfile,
+            modifier = Modifier.width(38.dp).height(38.dp),
+            corner = 6.dp,
+            focusedScale = 1.1f,
+            backgroundColor = Color.Transparent,
+        ) {
+            ProfileAvatar(profile, Modifier.fillMaxSize())
+        }
+    }
+}
+
+/** The phone's tabs along the bottom, where a thumb reaches them. */
+@Composable
+private fun PhoneBottomBar(tab: Int, onTab: (Int) -> Unit) {
+    Row(Modifier.fillMaxWidth().background(Color(0xF2101014)).navigationBarsPadding()) {
+        TabNames.forEachIndexed { i, label ->
+            val on = tab == i
+            FocusTile(
+                onClick = { onTab(i) },
+                modifier = Modifier.weight(1f).height(54.dp),
+                corner = 0.dp,
+                focusedScale = 1f,
+                backgroundColor = Color.Transparent,
+            ) {
+                Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(Modifier.width(26.dp).height(3.dp).background(if (on) Palette.Accent else Color.Transparent))
+                    Box(Modifier.height(7.dp))
+                    Text(label, fontSize = 12.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Medium, color = if (on) Color.White else Color(0xFF9A9AA6), maxLines = 1)
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun NavItem(label: String, selected: Boolean, width: Dp, fontSize: TextUnit, onClick: () -> Unit) {
     FocusTile(
@@ -780,7 +886,7 @@ private fun InfoStrip(item: StremioItem, compact: Boolean) {
         Modifier
             .fillMaxWidth()
             .height(if (compact) 80.dp else 112.dp)
-            .padding(horizontal = 48.dp, vertical = 4.dp),
+            .padding(horizontal = LocalSidePad.current, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Text(
@@ -822,7 +928,7 @@ private fun FadeIn(key: Any, content: @Composable () -> Unit) {
 
 @Composable
 private fun Note(text: String) {
-    Box(Modifier.fillMaxWidth().padding(horizontal = 48.dp, vertical = 8.dp)) {
+    Box(Modifier.fillMaxWidth().padding(horizontal = LocalSidePad.current, vertical = 8.dp)) {
         Text(text, fontSize = 17.sp, color = Palette.TextSecondary)
     }
 }

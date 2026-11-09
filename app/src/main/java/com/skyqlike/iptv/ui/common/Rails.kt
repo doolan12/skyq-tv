@@ -34,6 +34,9 @@ import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import com.skyqlike.iptv.ui.theme.Palette
 
+/** The gap at the left and right edge of rows and text. Wide on a TV, narrow on a phone. */
+val LocalSidePad = androidx.compose.runtime.compositionLocalOf { 48.dp }
+
 /** One tile in a row: a movie, a series, or something you were watching. */
 data class HomeTile(
     val id: String,
@@ -66,7 +69,7 @@ fun RailRow(
                 fontSize = 20.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = Palette.TextPrimary,
-                modifier = Modifier.padding(start = 48.dp, bottom = 2.dp),
+                modifier = Modifier.padding(start = LocalSidePad.current, bottom = 2.dp),
             )
         }
         // The vertical padding leaves room for a tile to grow when the remote lands on it.
@@ -74,7 +77,7 @@ fun RailRow(
         var rowFocused by remember { mutableStateOf(false) }
         LazyRow(
             modifier = Modifier.onFocusChanged { rowFocused = it.hasFocus },
-            contentPadding = PaddingValues(horizontal = 48.dp, vertical = 14.dp),
+            contentPadding = PaddingValues(horizontal = LocalSidePad.current, vertical = 14.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             itemsIndexed(rail.tiles, key = { i, t -> "$i|${rail.title}|${t.id}" }) { _, tile ->
@@ -101,10 +104,10 @@ fun Top10Row(
             fontSize = 20.sp,
             fontWeight = FontWeight.SemiBold,
             color = Palette.TextPrimary,
-            modifier = Modifier.padding(start = 48.dp, bottom = 2.dp),
+            modifier = Modifier.padding(start = LocalSidePad.current, bottom = 2.dp),
         )
         LazyRow(
-            contentPadding = PaddingValues(horizontal = 48.dp, vertical = 14.dp),
+            contentPadding = PaddingValues(horizontal = LocalSidePad.current, vertical = 14.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             itemsIndexed(tiles.take(10), key = { i, t -> "top10|$i|${t.id}" }) { i, tile ->
@@ -220,10 +223,10 @@ fun ShimmerHome() {
     Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         repeat(3) {
             Box(
-                Modifier.padding(start = 48.dp).width(180.dp).height(18.dp).alpha(pulse)
+                Modifier.padding(start = LocalSidePad.current).width(180.dp).height(18.dp).alpha(pulse)
                     .background(Color(0xFF3A3A44), androidx.compose.foundation.shape.RoundedCornerShape(4.dp))
             )
-            Row(Modifier.padding(horizontal = 48.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(Modifier.padding(horizontal = LocalSidePad.current), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 repeat(8) {
                     Box(
                         Modifier.width(130.dp).height(195.dp).alpha(pulse)

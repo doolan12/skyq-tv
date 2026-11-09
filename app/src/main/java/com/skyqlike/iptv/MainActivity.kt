@@ -521,6 +521,7 @@ private fun ReelApp(context: Context) {
                     note = "Removed ${it.name} from Continue Watching"
                 },
                 onOpenEpisode = { item, episodeId -> detail = DetailRequest(item, false, episodeId) },
+                onRefresh = { stremioState = StremioState.Idle },
                 onSettings = { askPinIfKids { showSettings = true } },
                 onShuffle = { showShuffle = true },
                 onSwitchProfile = {

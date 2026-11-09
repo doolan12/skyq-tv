@@ -327,6 +327,15 @@ fun PlayerScreen(
         }
     }
 
+    // The video always plays sideways; the rest of the app can be upright on a phone.
+    DisposableEffect(Unit) {
+        var c = context
+        while (c is android.content.ContextWrapper && c !is android.app.Activity) c = c.baseContext
+        val act = c as? android.app.Activity
+        act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        onDispose { act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_FULL_USER }
+    }
+
     // Full screen: hide the status and navigation bars while playing, and bring them back after.
     DisposableEffect(Unit) {
         var c = context
