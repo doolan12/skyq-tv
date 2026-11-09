@@ -2,6 +2,7 @@ package com.skyqlike.iptv.ui.detail
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -121,6 +122,29 @@ fun DetailScreen(
 
     val genreLine = info.genres.take(3).joinToString("  •  ")
     val listLabel = if (isFavourite) "✓ In My List" else "+ My List"
+
+    // A phone held upright gets its own layout: picture on top, then the buttons, story and episodes in one scrolling page.
+    val config = androidx.compose.ui.platform.LocalConfiguration.current
+    if (config.screenHeightDp > config.screenWidthDp) {
+        Box(Modifier.fillMaxSize().background(Palette.Background)) {
+            PhoneDetail(
+                info = info,
+                similar = similar,
+                season = season,
+                onSeason = { season = it },
+                episodeState = episodeState,
+                isFavourite = isFavourite,
+                onPlay = { picking = Pick(it) },
+                onToggleFavourite = { actions.onToggleFavourite(info) },
+                onTrailer = { showTrailer = true },
+                onBack = onBack,
+                onOpen = onOpen,
+            )
+            val tid = info.trailerId
+            if (showTrailer && tid != null) TrailerPlayer(tid) { showTrailer = false }
+        }
+        return
+    }
 
     Box(Modifier.fillMaxSize()) {
         Artwork(info.background ?: info.poster, info.name, Modifier.fillMaxSize())
@@ -265,6 +289,128 @@ fun DetailScreen(
         val trailerId = info.trailerId
         if (showTrailer && trailerId != null) {
             TrailerPlayer(trailerId) { showTrailer = false }
+        }
+    }
+}
+
+/** The upright-phone version of the title page. */
+@Composable
+private fun PhoneDetail(
+    info: StremioItem,
+    similar: List<StremioItem>,
+    season: Int,
+    onSeason: (Int) -> Unit,
+    episodeState: (StremioVideo) -> EpisodeState?,
+    isFavourite: Boolean,
+    onPlay: (StremioVideo?) -> Unit,
+    onToggleFavourite: () -> Unit,
+    onTrailer: () -> Unit,
+    onBack: () -> Unit,
+    onOpen: (StremioItem) -> Unit,
+) {
+    val isSeries = info.type == "series"
+    val seasons = info.videos.map { it.season }.distinct().sorted()
+    val ordered = info.videos.filter { it.season > 0 }.sortedWith(compareBy({ it.season }, { it.episode })).ifEmpty { info.videos }
+    val target = ordered.firstOrNull { episodeState(it)?.finished != true } ?: ordered.firstOrNull()
+    val current = if (season in seasons) season else target?.season ?: seasons.firstOrNull { it > 0 } ?: seasons.firstOrNull() ?: 1
+    val episodes = info.videos.filter { it.season == current }
+    var more by remember(info.id) { mutableStateOf(false) }
+
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 32.dp)) {
+        item {
+            Box(Modifier.fillMaxWidth().height(230.dp)) {
+                Artwork(info.background ?: info.poster, info.name, Modifier.fillMaxSize())
+                Box(
+                    Modifier.fillMaxSize().background(
+                        Brush.verticalGradient(0f to Color(0x66000000), 0.5f to Color.Transparent, 1f to Palette.Background)
+                    )
+                )
+                ActionButton("‹ Back", Modifier.padding(12.dp).width(96.dp).align(Alignment.TopStart)) { onBack() }
+            }
+        }
+        item {
+            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(info.name, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = Color.White, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                MetaLine(info.year, info.runtime, info.rating, fontSize = 14.sp)
+                if (info.genres.isNotEmpty()) Text(info.genres.take(3).joinToString("  •  "), fontSize = 14.sp, color = Color(0xFFD0D0D8))
+                val playLabel = if (isSeries) {
+                    target?.let { t ->
+                        val st = episodeState(t)
+                        (if (st != null && !st.finished && st.fraction > 0f) "Resume" else "Play") + " S${t.season} E${t.episode}"
+                    } ?: "Loading..."
+                } else "Play"
+                ActionButton(
+                    playLabel,
+                    Modifier.fillMaxWidth().padding(top = 6.dp),
+                    accent = true,
+                    accentColor = Color.White,
+                    textColor = Color.Black,
+                ) { if (isSeries) target?.let { onPlay(it) } else onPlay(null) }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ActionButton(if (isFavourite) "✓ In My List" else "+ My List", Modifier.weight(1f)) { onToggleFavourite() }
+                    if (info.trailerId != null) ActionButton("Trailer", Modifier.weight(1f)) { onTrailer() }
+                }
+                if (info.description.isNotBlank()) {
+                    Text(
+                        info.description,
+                        fontSize = 15.sp,
+                        color = Color(0xFFC0C0C8),
+                        maxLines = if (more) Int.MAX_VALUE else 4,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.clickable { more = !more },
+                    )
+                }
+            }
+        }
+        if (isSeries) {
+            if (seasons.size > 1) {
+                item {
+                    Row(
+                        Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        seasons.forEach { sn ->
+                            ActionButton(if (sn == 0) "Specials" else "Season $sn", Modifier.width(120.dp), accent = sn == current) { onSeason(sn) }
+                        }
+                    }
+                }
+            }
+            items(episodes, key = { it.id }) { ep ->
+                val st = episodeState(ep)
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { onPlay(ep) }
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Box(Modifier.width(128.dp).height(72.dp).clip(RoundedCornerShape(6.dp))) {
+                        Artwork(ep.thumbnail ?: info.poster, ep.title.ifBlank { info.name }, Modifier.fillMaxSize())
+                        if (st != null && !st.finished && st.fraction > 0f) {
+                            Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(Color(0x66FFFFFF)))
+                            Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(st.fraction.coerceIn(0.03f, 1f)).height(4.dp).background(Palette.Accent))
+                        }
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text("Episode ${ep.episode}" + if (st?.finished == true) "   ✓ Watched" else "", fontSize = 12.sp, color = Palette.TextSecondary)
+                        Text(
+                            ep.title.ifBlank { "Episode ${ep.episode}" },
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            if (info.videos.isEmpty()) {
+                item { Text("Loading episodes...", fontSize = 14.sp, color = Palette.TextSecondary, modifier = Modifier.padding(16.dp)) }
+            }
+        }
+        if (similar.size >= 4) {
+            item { MoreLikeThis(similar, onOpen, Modifier.padding(start = 16.dp, top = 16.dp)) }
         }
     }
 }
