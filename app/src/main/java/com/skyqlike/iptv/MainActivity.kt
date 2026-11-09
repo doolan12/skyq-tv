@@ -230,6 +230,8 @@ class MainActivity : ComponentActivity() {
                                 epg = epg,
                                 status = epgStatus,
                                 onPlay = playChannel,
+                                favouriteKeys = favourites,
+                                recentKeys = recentKeys,
                                 // The little preview stops while the full player is open.
                                 previewEnabled = playRequest == null,
                             )

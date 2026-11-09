@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -53,6 +54,7 @@ import androidx.tv.material3.Border
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
+import com.skyqlike.iptv.data.epg.nextOn
 import com.skyqlike.iptv.data.epg.nowOn
 import com.skyqlike.iptv.data.epg.progressAt
 import com.skyqlike.iptv.data.history.HistoryEntry
@@ -204,7 +206,11 @@ fun HomeScreen(
                             ?: channels.firstOrNull { nowFor(it) != null }
                             ?: channels.firstOrNull()
                     }
-                    HomeContent(rails, featured, nowFor, minute, onPlay, onToggleFavourite)
+                    HomeContent(
+                        rails, featured, nowFor,
+                        { ch -> epg.nextOn(ch, System.currentTimeMillis()) },
+                        minute, onPlay, onToggleFavourite,
+                    )
                 }
                 "Settings" -> settingsContent()
                 "TV Guide" -> guideContent()
@@ -442,19 +448,114 @@ private fun HomeContent(
     rails: List<Rail>,
     featured: Channel?,
     nowFor: (Channel) -> Programme?,
+    nextFor: (Channel) -> Programme?,
     minute: Int,
     onPlay: (Channel) -> Unit,
     onToggleFavourite: (Channel) -> Unit,
 ) {
+    // "More Info" opens a details page in place of the home page, so the remote can't wander behind it.
+    var infoFor by remember { mutableStateOf<Channel?>(null) }
+    val info = infoFor
+    if (info != null) {
+        InfoPage(info, nowFor(info), nextFor(info), onWatch = { onPlay(info) }, onClose = { infoFor = null })
+        return
+    }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 40.dp),
         verticalArrangement = Arrangement.spacedBy(22.dp),
     ) {
         item { SkyHeader(minute) }
-        featured?.let { ch -> item { SkyHero(ch, nowFor(ch), onPlay, onToggleFavourite) } }
+        featured?.let { ch -> item { SkyHero(ch, nowFor(ch), onPlay, { infoFor = ch }, onToggleFavourite) } }
         items(rails, key = { it.title }) { rail ->
             RailRow(rail, 250.dp, 140.dp)
+        }
+    }
+}
+
+/** Full details of what is on now, and what is next, for one channel. */
+@Composable
+private fun InfoPage(
+    channel: Channel,
+    now: Programme?,
+    next: Programme?,
+    onWatch: () -> Unit,
+    onClose: () -> Unit,
+) {
+    val clock = remember { java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault()) }
+    val watchFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { watchFocus.requestFocus() } }
+    BackHandler { onClose() }
+
+    Row(Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 36.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                "${channel.name}  |  ${channel.group}",
+                color = Color(0xCCFFFFFF),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                now?.title ?: channel.name,
+                fontSize = 38.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (now != null) {
+                Text(
+                    "ON NOW   " + clock.format(java.util.Date(now.start)) + " - " + clock.format(java.util.Date(now.stop)) +
+                        if (now.genre.isNotBlank()) "   |   ${now.genre}" else "",
+                    fontSize = 15.sp,
+                    color = Color(0xCCFFFFFF),
+                )
+                if (now.description.isNotBlank()) {
+                    Text(now.description, fontSize = 16.sp, color = Color(0xCCFFFFFF), maxLines = 8, overflow = TextOverflow.Ellipsis)
+                }
+            } else {
+                Text("No programme information for this channel.", fontSize = 16.sp, color = Color(0xCCFFFFFF))
+            }
+            if (next != null) {
+                Text(
+                    "NEXT   " + clock.format(java.util.Date(next.start)) + "   " + next.title,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 14.dp)) {
+                FocusTile(
+                    onClick = onWatch,
+                    modifier = Modifier.width(170.dp).height(46.dp).focusRequester(watchFocus),
+                    corner = 23.dp,
+                    backgroundColor = Color.White,
+                ) {
+                    Text("Watch Now", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF101030), modifier = Modifier.align(Alignment.Center))
+                }
+                FocusTile(
+                    onClick = onClose,
+                    modifier = Modifier.width(150.dp).height(46.dp),
+                    corner = 23.dp,
+                    backgroundColor = Color(0x40FFFFFF),
+                ) {
+                    Text("Back", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.Center))
+                }
+            }
+        }
+        Spacer(Modifier.width(36.dp))
+        Box(Modifier.width(380.dp).height(214.dp).clip(RoundedCornerShape(18.dp))) {
+            Artwork(
+                url = now?.iconUrl ?: channel.logoUrl,
+                seed = channel.name,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = if (now?.iconUrl != null) ContentScale.Crop else ContentScale.Fit,
+            )
         }
     }
 }
@@ -483,6 +584,7 @@ private fun SkyHero(
     channel: Channel,
     now: Programme?,
     onPlay: (Channel) -> Unit,
+    onMoreInfo: () -> Unit,
     onToggleFavourite: (Channel) -> Unit,
 ) {
     val clock = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
@@ -556,15 +658,23 @@ private fun SkyHero(
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 6.dp)) {
                 FocusTile(
                     onClick = { onPlay(channel) },
-                    modifier = Modifier.width(170.dp).height(46.dp),
+                    modifier = Modifier.width(150.dp).height(46.dp),
                     corner = 23.dp,
                     backgroundColor = Color.White,
                 ) {
-                    Text("Watch Live", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF101030), modifier = Modifier.align(Alignment.Center))
+                    Text("Watch Now", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF101030), modifier = Modifier.align(Alignment.Center))
+                }
+                FocusTile(
+                    onClick = onMoreInfo,
+                    modifier = Modifier.width(150.dp).height(46.dp),
+                    corner = 23.dp,
+                    backgroundColor = Color(0x40FFFFFF),
+                ) {
+                    Text("More Info", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.Center))
                 }
                 FocusTile(
                     onClick = { onToggleFavourite(channel) },
-                    modifier = Modifier.width(150.dp).height(46.dp),
+                    modifier = Modifier.width(130.dp).height(46.dp),
                     corner = 23.dp,
                     backgroundColor = Color(0x40FFFFFF),
                 ) {

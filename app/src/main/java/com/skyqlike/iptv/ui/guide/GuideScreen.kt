@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,6 +42,7 @@ import androidx.tv.material3.Text
 import com.skyqlike.iptv.data.epg.EpgTime
 import com.skyqlike.iptv.data.model.Channel
 import com.skyqlike.iptv.data.model.Programme
+import com.skyqlike.iptv.data.model.favKey
 import com.skyqlike.iptv.ui.common.Artwork
 import com.skyqlike.iptv.ui.home.FocusTile
 import com.skyqlike.iptv.ui.theme.Palette
@@ -51,7 +53,7 @@ import java.util.Locale
 
 // How wide the timeline is: every minute of TV is 6dp wide, so 30 minutes is 180dp.
 private val DpPerMinute = 6.dp
-private val ChannelColumnWidth = 220.dp
+private val ChannelColumnWidth = 256.dp
 private val RowHeight = 72.dp
 
 private data class Selection(val channel: Channel, val programme: Programme?)
@@ -63,6 +65,8 @@ fun GuideScreen(
     status: String,
     onPlay: (Channel) -> Unit,
     previewEnabled: Boolean = true,
+    favouriteKeys: Set<String> = emptySet(),
+    recentKeys: List<String> = emptyList(),
 ) {
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -77,13 +81,15 @@ fun GuideScreen(
     val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
     var selected by remember { mutableStateOf<Selection?>(null) }
 
-    // Channel category filter: null means every channel.
-    var category by remember { mutableStateOf<String?>(null) }
-    val groups = remember(channels) { channels.map { it.group.ifBlank { "Other" } }.distinct() }
-    val visible = remember(channels, category) {
-        if (category == null) channels else channels.filter { it.group.ifBlank { "Other" } == category }
-    }
-    LaunchedEffect(category) { selected = null }
+    // Channel filters: All, Favourites, Recently watched, the usual categories, then the provider's own groups.
+    val filters = remember(channels, favouriteKeys, recentKeys) { buildGuideFilters(channels, favouriteKeys, recentKeys) }
+    var filterIndex by remember { mutableIntStateOf(0) }
+    val activeFilter = filters[filterIndex.coerceIn(0, filters.lastIndex)]
+    val visible = remember(channels, activeFilter) { channels.filter(activeFilter.matches) }
+    LaunchedEffect(filterIndex) { selected = null }
+
+    // Channel numbers are the same ones you type on the remote while watching.
+    val numbers = remember(channels) { channels.withIndex().associate { it.value.id to it.index + 1 } }
 
     if (epg.isEmpty()) {
         NoGuide(status)
@@ -97,7 +103,7 @@ fun GuideScreen(
 
         Column(Modifier.fillMaxSize()) {
             InfoPanel(shown, nowMs, timeFormat, onPlay, previewEnabled)
-            CategoryBar(groups, category) { category = it }
+            CategoryBar(filters.map { it.label }, filterIndex.coerceIn(0, filters.lastIndex)) { filterIndex = it }
 
             // Time labels along the top, scrolling together with the rows below.
             Row(Modifier.fillMaxWidth().height(30.dp).background(Palette.Rail)) {
@@ -131,7 +137,14 @@ fun GuideScreen(
                                 .padding(horizontal = 10.dp),
                             contentAlignment = Alignment.CenterStart,
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(
+                                    "${numbers[channel.id] ?: ""}",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Palette.Accent,
+                                    modifier = Modifier.width(34.dp),
+                                )
                                 Artwork(
                                     url = channel.logoUrl,
                                     seed = channel.name,
@@ -340,20 +353,59 @@ private fun InfoPanel(
     }
 }
 
-/** A scrolling row of category buttons. Pick one to show only those channels in the guide. */
+private class GuideFilter(val label: String, val matches: (Channel) -> Boolean)
+
+/** The usual TV categories, matched against each channel's group name from the provider. */
+private val QuickCategories = listOf(
+    "Entertainment" to listOf("entertainment", "general"),
+    "Movies" to listOf("movie", "cinema", "film", "premiere"),
+    "Sports" to listOf("sport"),
+    "News" to listOf("news", "business", "weather"),
+    "Documentary" to listOf("documentar", "factual", "nature", "science", "history"),
+    "Kids" to listOf("kid", "child", "cartoon", "family"),
+    "Lifestyle" to listOf("lifestyle", "food", "cook", "travel", "fashion", "home"),
+    "Music" to listOf("music", "radio", "mtv", "concert"),
+    "International" to listOf("international", "world", "foreign", "latin", "arabic", "asia", "europe", "africa", "india"),
+)
+
+/** Builds the filter buttons. Ones that would show no channels are left out. */
+private fun buildGuideFilters(
+    channels: List<Channel>,
+    favouriteKeys: Set<String>,
+    recentKeys: List<String>,
+): List<GuideFilter> {
+    val out = ArrayList<GuideFilter>()
+    out += GuideFilter("All channels") { true }
+    if (channels.any { it.favKey in favouriteKeys }) {
+        out += GuideFilter("Favourites") { it.favKey in favouriteKeys }
+    }
+    val recent = recentKeys.toHashSet()
+    if (channels.any { it.favKey in recent }) {
+        out += GuideFilter("Recently watched") { it.favKey in recent }
+    }
+    for ((label, words) in QuickCategories) {
+        val filter = GuideFilter(label) { ch -> words.any { ch.group.contains(it, ignoreCase = true) } }
+        if (channels.any(filter.matches)) out += filter
+    }
+    // Then the provider's own groups, exactly as they named them.
+    channels.map { it.group.ifBlank { "Other" } }.distinct().forEach { group ->
+        out += GuideFilter(group) { it.group.ifBlank { "Other" } == group }
+    }
+    return out
+}
+
+/** A scrolling row of filter buttons. Pick one to show only those channels in the guide. */
 @Composable
-private fun CategoryBar(groups: List<String>, selected: String?, onPick: (String?) -> Unit) {
-    val options: List<String?> = listOf<String?>(null) + groups
+private fun CategoryBar(labels: List<String>, selectedIndex: Int, onPick: (Int) -> Unit) {
     LazyRow(
         Modifier.fillMaxWidth().background(Palette.Rail),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        itemsIndexed(options) { _, group ->
-            val label = group ?: "All channels"
-            val on = group == selected
+        itemsIndexed(labels) { index, label ->
+            val on = index == selectedIndex
             FocusTile(
-                onClick = { onPick(group) },
+                onClick = { onPick(index) },
                 modifier = Modifier.width((label.length * 9 + 36).dp).height(34.dp),
                 corner = 17.dp,
                 focusedScale = 1.05f,
