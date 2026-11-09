@@ -181,6 +181,7 @@ fun PlayerScreen(
     var endedTick by remember { mutableIntStateOf(0) }
     var showEpisodes by remember { mutableStateOf(false) }
     var showCast by remember { mutableStateOf(false) }
+    var showMore by remember { mutableStateOf(false) }
     var sleepIndex by remember { mutableIntStateOf(0) }
     var boostIndex by remember { mutableIntStateOf(0) }
     var subOffsetMs by remember { mutableLongStateOf(0L) }
@@ -367,6 +368,7 @@ fun PlayerScreen(
         subOffsetMs = 0L
         showEpisodes = false
         showCast = false
+        showMore = false
         val mediaItem = buildMediaItem(cur)
         if (subtitlesOn && cur.subtitles.isNotEmpty()) {
             exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
@@ -410,8 +412,8 @@ fun PlayerScreen(
     }
 
     // Controls hide by themselves after a few seconds.
-    LaunchedEffect(overlay, overlayTick, picker, showEpisodes, showCast) {
-        if (overlay && picker == null && !showEpisodes && !showCast && !failed) {
+    LaunchedEffect(overlay, overlayTick, picker, showEpisodes, showCast, showMore) {
+        if (overlay && picker == null && !showEpisodes && !showCast && !showMore && !failed) {
             delay(7_000)
             overlay = false
         }
@@ -439,10 +441,10 @@ fun PlayerScreen(
     val firstButtonFocus = remember { FocusRequester() }
     val pickerFocus = remember { FocusRequester() }
 
-    LaunchedEffect(overlay, picker, showEpisodes, showCast) {
+    LaunchedEffect(overlay, picker, showEpisodes, showCast, showMore) {
         runCatching {
             when {
-                picker != null || showEpisodes || showCast -> pickerFocus.requestFocus()
+                picker != null || showEpisodes || showCast || showMore -> pickerFocus.requestFocus()
                 overlay -> firstButtonFocus.requestFocus()
                 else -> rootFocus.requestFocus()
             }
@@ -450,7 +452,7 @@ fun PlayerScreen(
     }
 
     BackHandler {
-        if (showCast) showCast = false else if (showEpisodes) showEpisodes = false else if (picker != null) picker = null else onClose()
+        if (showMore) showMore = false else if (showCast) showCast = false else if (showEpisodes) showEpisodes = false else if (picker != null) picker = null else onClose()
     }
 
     val item = playlist[index]
@@ -947,38 +949,13 @@ fun PlayerScreen(
                     }
                     PlayerButton("Audio", Modifier.width(100.dp)) { picker = C.TRACK_TYPE_AUDIO }
                     PlayerButton("Subtitles", Modifier.width(120.dp)) { picker = C.TRACK_TYPE_TEXT }
-                    PlayerButton("Text: ${SubStyles[subStyleIndex].label}", Modifier.width(170.dp)) {
-                        bump()
-                        subStyleIndex = (subStyleIndex + 1) % SubStyles.size
-                        uiPrefs.edit().putInt("substyle", subStyleIndex).apply()
-                    }
-                    if (item.subtitles.isNotEmpty()) {
-                        PlayerButton("Subs -0.5s", Modifier.width(120.dp)) { bump(); nudgeSubs(-500) }
-                        PlayerButton("Subs +0.5s", Modifier.width(120.dp)) { bump(); nudgeSubs(500) }
-                    }
                     if (item.cast.isNotEmpty() || item.director.isNotBlank()) {
                         PlayerButton("Cast", Modifier.width(100.dp)) { showCast = true }
-                    }
-                    PlayerButton("Sleep: " + (if (sleepIndex == 0) "Off" else "${SleepChoices[sleepIndex]}m"), Modifier.width(140.dp)) {
-                        bump()
-                        sleepIndex = (sleepIndex + 1) % SleepChoices.size
-                    }
-                    PlayerButton("Boost: ${BoostLabels[boostIndex]}", Modifier.width(150.dp)) {
-                        bump()
-                        boostIndex = (boostIndex + 1) % BoostChoices.size
                     }
                     if (episodes.isNotEmpty() && resolveEpisode != null) {
                         PlayerButton("Episodes", Modifier.width(120.dp)) { showEpisodes = true }
                     }
-                    PlayerButton("Size: ${ResizeLabels[resizeIndex]}", Modifier.width(150.dp)) {
-                        bump()
-                        resizeIndex = (resizeIndex + 1) % ResizeModes.size
-                    }
-                    PlayerButton("Speed: ${speedLabel(SpeedChoices[speedIndex])}", Modifier.width(150.dp)) {
-                        bump()
-                        speedIndex = (speedIndex + 1) % SpeedChoices.size
-                        exo.setPlaybackSpeed(SpeedChoices[speedIndex])
-                    }
+                    PlayerButton("More", Modifier.width(100.dp)) { showMore = true }
                     if (canPop) {
                         PlayerButton("Pop out", Modifier.width(110.dp)) {
                             overlay = false
@@ -992,6 +969,56 @@ fun PlayerScreen(
                         }
                     }
                 }
+            }
+        }
+
+        // Everything else: picture size, speed, subtitle look and sync, sleep timer, volume boost.
+        if (showMore) {
+            Column(
+                Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(24.dp)
+                    .width(340.dp)
+                    .fillMaxHeight(0.92f)
+                    .background(Color(0xE6101014), RoundedCornerShape(16.dp))
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text("More", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+                LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    item {
+                        PlayerButton("Picture: ${ResizeLabels[resizeIndex]}", Modifier.fillMaxWidth().focusRequester(pickerFocus)) {
+                            resizeIndex = (resizeIndex + 1) % ResizeModes.size
+                        }
+                    }
+                    item {
+                        PlayerButton("Speed: ${speedLabel(SpeedChoices[speedIndex])}", Modifier.fillMaxWidth()) {
+                            speedIndex = (speedIndex + 1) % SpeedChoices.size
+                            exo.setPlaybackSpeed(SpeedChoices[speedIndex])
+                        }
+                    }
+                    item {
+                        PlayerButton("Subtitle text: ${SubStyles[subStyleIndex].label}", Modifier.fillMaxWidth()) {
+                            subStyleIndex = (subStyleIndex + 1) % SubStyles.size
+                            uiPrefs.edit().putInt("substyle", subStyleIndex).apply()
+                        }
+                    }
+                    if (item.subtitles.isNotEmpty()) {
+                        item { PlayerButton("Subtitles earlier (-0.5s)", Modifier.fillMaxWidth()) { nudgeSubs(-500) } }
+                        item { PlayerButton("Subtitles later (+0.5s)", Modifier.fillMaxWidth()) { nudgeSubs(500) } }
+                    }
+                    item {
+                        PlayerButton("Sleep timer: " + (if (sleepIndex == 0) "Off" else "${SleepChoices[sleepIndex]} min"), Modifier.fillMaxWidth()) {
+                            sleepIndex = (sleepIndex + 1) % SleepChoices.size
+                        }
+                    }
+                    item {
+                        PlayerButton("Volume boost: ${BoostLabels[boostIndex]}", Modifier.fillMaxWidth()) {
+                            boostIndex = (boostIndex + 1) % BoostChoices.size
+                        }
+                    }
+                }
+                PlayerButton("Close", Modifier.fillMaxWidth(), accent = true) { showMore = false }
             }
         }
 
@@ -1023,7 +1050,7 @@ fun PlayerScreen(
         }
 
         // Skip credits: in the last minute or two of an episode, jump straight to the next one.
-        if (upNext != null && !showUpNext && remainingMs < 100_000L && picker == null && !showEpisodes && !showCast && !failed) {
+        if (upNext != null && !showUpNext && remainingMs < 100_000L && picker == null && !showEpisodes && !showCast && !showMore && !failed) {
             PlayerButton(
                 "Skip credits",
                 Modifier.align(Alignment.BottomEnd).padding(end = 40.dp, bottom = if (overlay) 190.dp else 60.dp).width(190.dp),

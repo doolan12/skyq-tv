@@ -541,7 +541,7 @@ fun BrowseScreen(
                 }
                 all.distinctBy { it.lowercase() }.take(40)
             }
-            val showBanner = false // banner removed: rows start straight under the tabs
+            val showBanner = browsing && ui.genre == null && heroItems.isNotEmpty()
 
             // On a TV the banner and top bar stay put and only the rows underneath scroll, so the banner is always
             // visible (and follows the poster you're on). On a phone the banner scrolls away with the page.
@@ -550,35 +550,15 @@ fun BrowseScreen(
                     (c.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK) ==
                     android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
             }
-            val bannerBox: @Composable (Dp?) -> Unit = { fixedHeight ->
-                    Box(Modifier.fillMaxWidth()) {
-                        if (showBanner) {
-                            val hero = focusedHero?.takeIf { browsing } ?: heroItems[heroIndex.coerceIn(0, heroItems.size - 1)]
-                            Billboard(
-                                item = hero,
-                                height = fixedHeight ?: 340.dp,
-                                isFavourite = favourites.any { it.type == hero.type && it.id == hero.id },
-                                playFocus = playFocus,
-                                onPlay = { onPlay(hero) },
-                                onInfo = { onOpen(hero) },
-                                onFavourite = { toggle(hero) },
-                                previewId = if (previewsOn && heroKey != null && heroKey !in previewFailed) trailerIds[heroKey] else null,
-                                heroCount = 1,
-                                heroPos = 0,
-                                onHeroJump = {
-                                    focusedHero = null
-                                    heroIndex = it.coerceIn(0, heroItems.size - 1)
-                                },
-                                onPreviewPlaying = { previewPlaying = true },
-                                onPreviewStopped = { previewPlaying = false },
-                                onPreviewFailed = {
-                                    previewPlaying = false
-                                    if (heroKey != null) previewFailed += heroKey
-                                },
-                            )
-                        }
-                        TopBar(tab, selectTab, profile, onSettings, onSwitchProfile, onShuffle, Modifier.align(Alignment.TopStart))
+            // The tabs, and under them a short strip about the title you have selected (it follows the poster you're on).
+            val headerBox: @Composable () -> Unit = {
+                Column(Modifier.fillMaxWidth()) {
+                    TopBar(tab, selectTab, profile, onSettings, onSwitchProfile, onShuffle)
+                    if (showBanner) {
+                        val hero = focusedHero?.takeIf { browsing } ?: heroItems[heroIndex.coerceIn(0, heroItems.size - 1)]
+                        InfoStrip(hero, compact = !isTv)
                     }
+                }
             }
             val listBody: androidx.compose.foundation.lazy.LazyListScope.() -> Unit = {
                 if (genreList.isNotEmpty()) {
@@ -700,32 +680,15 @@ fun BrowseScreen(
                     else RailRow(spec.rail, spec.width, spec.height)
                 }
             }
-            if (isTv) {
-                BoxWithConstraints(Modifier.fillMaxSize()) {
-                    val bannerHeight = (maxHeight * 0.46f).coerceIn(210.dp, 300.dp)
-                    Box(Modifier.fillMaxSize()) {
-                        Column(Modifier.fillMaxSize()) {
-                            bannerBox(bannerHeight)
-                            LazyColumn(
-                                Modifier.weight(1f).fillMaxWidth(),
-                                state = ui.list,
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                                contentPadding = PaddingValues(bottom = 40.dp),
-                                content = listBody,
-                            )
-                        }
-                    }
-                }
-            } else {
+            Column(Modifier.fillMaxSize()) {
+                headerBox()
                 LazyColumn(
-                    Modifier.fillMaxSize(),
+                    Modifier.weight(1f).fillMaxWidth(),
                     state = ui.list,
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(bottom = 40.dp),
-                ) {
-                    item { bannerBox(null) }
-                    listBody()
-                }
+                    content = listBody,
+                )
             }
         }
     }
@@ -810,96 +773,39 @@ private fun NavItem(label: String, selected: Boolean, width: Dp, fontSize: TextU
 
 // ---------------------------------------------------------------------------- billboard
 
-/** The big featured picture across the top of the page. */
+/** A short strip of facts about the selected title: name, year and rating, genres, and a couple of lines of story. */
 @Composable
-private fun Billboard(
-    item: StremioItem,
-    height: Dp,
-    isFavourite: Boolean,
-    playFocus: FocusRequester,
-    onPlay: () -> Unit,
-    onInfo: () -> Unit,
-    onFavourite: () -> Unit,
-    previewId: String?,
-    heroCount: Int,
-    heroPos: Int,
-    onHeroJump: (Int) -> Unit,
-    onPreviewPlaying: () -> Unit,
-    onPreviewStopped: () -> Unit,
-    onPreviewFailed: () -> Unit,
-) {
-    // A short banner drops the extra lines so the title and buttons still fit.
-    val tight = height < 200.dp
-    val medium = height < 260.dp
-    Box(Modifier.fillMaxWidth().height(height)) {
-        // A blurred, darkened copy of the artwork as the backdrop, so the poster and the writing stand out.
-        FadeIn(item.type + ":" + item.id) {
-            Artwork(item.background ?: item.poster, item.name, Modifier.fillMaxSize().blur(26.dp))
-        }
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.62f)))
-        // Fades into the page at the bottom, so there's no hard edge.
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.verticalGradient(0f to Color.Transparent, 0.4f to Color.Transparent, 0.8f to Palette.Background.copy(alpha = 0.85f), 1f to Palette.Background)
-            )
+private fun InfoStrip(item: StremioItem, compact: Boolean) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .height(if (compact) 80.dp else 112.dp)
+            .padding(horizontal = 48.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            item.name,
+            fontSize = if (compact) 20.sp else 26.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = Color.White,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
-        // The poster on the left, the details beside it. The top gap keeps clear of the tab bar.
-        val posterHeight = (height - 78.dp).coerceIn(90.dp, 230.dp)
-        Row(
-            Modifier.fillMaxSize().padding(start = 48.dp, end = 48.dp, top = 58.dp, bottom = 20.dp),
-            horizontalArrangement = Arrangement.spacedBy(22.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            FadeIn(item.type + ":" + item.id + ":poster") {
-                Artwork(
-                    item.poster ?: item.background,
-                    item.name,
-                    Modifier.height(posterHeight).width(posterHeight * 2 / 3).clip(RoundedCornerShape(8.dp)),
-                )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(if (item.type == "series") "SERIES" else "FILM", fontSize = 12.sp, color = Palette.Accent, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            MetaLine(item.year, "", item.rating, fontSize = 13.sp)
+            if (item.genres.isNotEmpty()) {
+                Text(item.genres.take(3).joinToString("  •  "), fontSize = 13.sp, color = Color(0xFFD0D0D8), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (!tight && !medium) {
-                    Text(
-                        if (item.type == "series") "SERIES" else "FILM",
-                        fontSize = 13.sp,
-                        color = Palette.Accent,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 2.sp,
-                    )
-                }
-                Text(
-                    item.name,
-                    fontSize = if (tight) 24.sp else if (medium) 28.sp else 34.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = Color.White,
-                    maxLines = if (tight) 1 else 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                MetaLine(item.year, "", item.rating, fontSize = 14.sp)
-                if (!tight && item.genres.isNotEmpty()) {
-                    Text(item.genres.take(3).joinToString("  •  "), fontSize = 14.sp, color = Color(0xFFD0D0D8))
-                }
-                if (!tight && item.description.isNotBlank()) {
-                    Text(
-                        item.description,
-                        fontSize = if (medium) 12.sp else 14.sp,
-                        color = Color(0xFFC8C8D0),
-                        maxLines = if (medium) 2 else 3,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 4.dp)) {
-                    ActionButton(
-                        "Play",
-                        Modifier.width(120.dp).focusRequester(playFocus),
-                        accent = true,
-                        accentColor = Color.White,
-                        textColor = Color.Black,
-                    ) { onPlay() }
-                    ActionButton("More Info", Modifier.width(130.dp)) { onInfo() }
-                    ActionButton(if (isFavourite) "✓ My List" else "+ My List", Modifier.width(130.dp)) { onFavourite() }
-                }
-            }
+        }
+        if (item.description.isNotBlank()) {
+            Text(
+                item.description,
+                fontSize = 13.sp,
+                color = Color(0xFFC0C0C8),
+                maxLines = if (compact) 1 else 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
