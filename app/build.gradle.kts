@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("com.google.devtools.ksp")
 }
 
 android {
@@ -12,8 +13,8 @@ android {
         applicationId = "com.skyqlike.iptv"
         minSdk = 22          // covers older Fire TV sticks and Android TV boxes
         targetSdk = 34
-        versionCode = 14
-        versionName = "1.3.0"
+        versionCode = 15
+        versionName = "1.4.0"
     }
 
     buildTypes {
@@ -50,6 +51,15 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-dash:$media3")
     implementation("androidx.media3:media3-datasource:$media3")
     implementation("androidx.media3:media3-ui:$media3")
+
+    // Saved copy of the TV guide, so it opens instantly even with thousands of channels
+    val room = "2.6.1"
+    implementation("androidx.room:room-runtime:$room")
+    implementation("androidx.room:room-ktx:$room")
+    ksp("androidx.room:room-compiler:$room")
+
+    // Refreshes the TV guide in the background
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
 
     val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
     implementation(composeBom)

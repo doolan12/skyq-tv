@@ -72,7 +72,7 @@ import com.skyqlike.iptv.ui.theme.Palette
 
 /** The menu down the left side, in the order from the brief. */
 val MenuItems = listOf(
-    "Stremio", "Home", "TV Guide", "All Channels", "Catch Up", "Movies", "Sports",
+    "Home", "TV Guide", "All Channels", "Catch Up", "Movies", "Sports",
     "Entertainment", "News", "Music", "Movie Channels", "Documentaries", "Kids",
     "UK", "Australia", "Ireland", "USA", "My Library", "Favourites", "Settings",
 )
@@ -138,7 +138,6 @@ fun HomeScreen(
     moviesContent: @Composable () -> Unit = {},
     libraryContent: @Composable () -> Unit = {},
     catchUpContent: @Composable () -> Unit = {},
-    stremioContent: @Composable () -> Unit = {},
     epg: Map<String, List<Programme>> = emptyMap(),
 ) {
     var section by remember { mutableStateOf("Home") }
@@ -185,12 +184,8 @@ fun HomeScreen(
     val expanded = menuFocused || pinned
     val railWidth by animateDpAsState(if (immersive) 0.dp else 68.dp, label = "rail")
     val menuWidth by animateDpAsState(if (immersive) 0.dp else if (expanded) 236.dp else 68.dp, label = "menu")
-    val background = if (section == "Stremio") {
-        Brush.verticalGradient(listOf(Palette.Background, Palette.Background))
-    } else {
-        // Deep blue to near-black, in the style of a satellite TV box.
-        Brush.verticalGradient(listOf(Color(0xFF14246B), Color(0xFF0B1238), Color(0xFF05060F)))
-    }
+    // Deep blue to near-black, in the style of a satellite TV box.
+    val background = Brush.verticalGradient(listOf(Color(0xFF14246B), Color(0xFF0B1238), Color(0xFF05060F)))
 
     val setImmersive: (Boolean) -> Unit = remember { { v: Boolean -> immersive = v } }
     CompositionLocalProvider(
@@ -216,7 +211,6 @@ fun HomeScreen(
                 "Movies" -> moviesContent()
                 "My Library" -> libraryContent()
                 "Catch Up" -> catchUpContent()
-                "Stremio" -> stremioContent()
                 "All Channels" -> ChannelBrowser("All Channels", channels, "No channels loaded yet. Add a provider in Settings.", onPlay, onToggleFavourite)
                 "Favourites" -> ChannelBrowser(
                     "Favourites",
@@ -313,8 +307,6 @@ private val CategoryNames = CategoryLinks.map { it.name }.toSet()
 
 /** The menu, grouped under small headings. The category pages sit inside one foldable list. */
 private fun menuEntries(categoriesOpen: Boolean): List<MenuEntry> = buildList {
-    add(MenuHeader("STREAMING"))
-    add(MenuLink("Stremio", "stremio"))
     add(MenuHeader("LIVE TV"))
     add(MenuLink("Home", "home"))
     add(MenuLink("TV Guide", "guide"))
@@ -391,7 +383,7 @@ private fun SideMenu(
                         selected = entry.name == selected,
                         expanded = expanded,
                         indent = entry.indent,
-                        modifier = if (entry.name == "Stremio") Modifier.focusRequester(firstFocus) else Modifier,
+                        modifier = if (entry.name == "Home") Modifier.focusRequester(firstFocus) else Modifier,
                     ) { onSelect(entry.name) }
                 }
             }

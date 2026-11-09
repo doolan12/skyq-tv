@@ -11,6 +11,8 @@ data class AppSettings(
     /** 0 = Fit, 1 = Zoom, 2 = Stretch. */
     val aspect: Int = 0,
     val autoReconnect: Boolean = true,
+    /** Download a fresh TV guide in the background every few hours. */
+    val autoGuideUpdate: Boolean = true,
     val resume: Boolean = true,
     val subtitlesOn: Boolean = false,
     /** Two-letter language code like "en", or empty for "whatever the stream starts with". */
@@ -37,6 +39,7 @@ class SettingsStore(context: Context) {
     private fun read(): AppSettings = AppSettings(
         aspect = prefs.getInt("aspect", 0),
         autoReconnect = prefs.getBoolean("autoReconnect", true),
+        autoGuideUpdate = prefs.getBoolean("autoGuideUpdate", true),
         resume = prefs.getBoolean("resume", true),
         subtitlesOn = prefs.getBoolean("subtitlesOn", false),
         audioLang = prefs.getString("audioLang", "") ?: "",
@@ -52,6 +55,7 @@ class SettingsStore(context: Context) {
         prefs.edit()
             .putInt("aspect", s.aspect)
             .putBoolean("autoReconnect", s.autoReconnect)
+            .putBoolean("autoGuideUpdate", s.autoGuideUpdate)
             .putBoolean("resume", s.resume)
             .putBoolean("subtitlesOn", s.subtitlesOn)
             .putString("audioLang", s.audioLang)

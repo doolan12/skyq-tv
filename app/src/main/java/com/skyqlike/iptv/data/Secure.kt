@@ -11,7 +11,7 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /**
- * Locks private text (passwords, the parental PIN, Stremio keys) before it is saved on the device.
+ * Locks private text (passwords and the parental PIN) before it is saved on the device.
  *
  * The lock key lives inside the Android Keystore, so it never leaves the device's secure hardware or
  * secure software store, and other apps can't read it.

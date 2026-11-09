@@ -1,6 +1,10 @@
 package com.skyqlike.iptv.data.epg
 
 import android.content.Context
+import com.skyqlike.iptv.data.db.AppDatabase
+import com.skyqlike.iptv.data.db.EpgMeta
+import com.skyqlike.iptv.data.db.ProgrammeRow
+import com.skyqlike.iptv.data.db.toProgramme
 import com.skyqlike.iptv.data.model.Channel
 import com.skyqlike.iptv.data.model.Programme
 import com.skyqlike.iptv.data.provider.Provider
@@ -35,12 +39,26 @@ object EpgTime {
  */
 class EpgRepository(private val context: Context) {
 
+    private val dao by lazy { AppDatabase.get(context).epg() }
+
+    /** Forgets the saved guide for one provider (when it is removed). */
+    suspend fun forgetProvider(providerId: String) {
+        withContext(Dispatchers.IO) { runCatching { dao.forgetProvider(providerId) } }
+    }
+
+    /** Forgets every saved guide ("Clear saved data" in Settings). */
+    suspend fun clearAllSaved() {
+        withContext(Dispatchers.IO) { runCatching { dao.clearAll() } }
+    }
+
     suspend fun load(
         provider: Provider?,
         channels: List<Channel>,
         forceRefresh: Boolean,
     ): Result<Map<String, List<Programme>>> = withContext(Dispatchers.IO) {
-        val from = EpgTime.guideStart(System.currentTimeMillis())
+        val now = System.currentTimeMillis()
+        val from = EpgTime.guideStart(now)
+        val windowEnd = from + EpgTime.GUIDE_HOURS * HOUR_MS
 
         if (provider == null) {
             return@withContext Result.success(SampleEpg.generate(channels, from))
@@ -57,6 +75,27 @@ class EpgRepository(private val context: Context) {
                 IOException("Your channels have no guide IDs (tvg-id), so the guide can't match them.")
             )
         }
+        val wantedHash = wanted.sorted().hashCode()
+
+        // Fast path: the guide was already read and saved in the database, so there is no big file to read again.
+        if (!forceRefresh) {
+            val saved = runCatching {
+                val meta = dao.meta(provider.id)
+                if (meta != null &&
+                    now - meta.fetchedAt < CACHE_MAX_AGE_MS &&
+                    meta.wantedHash == wantedHash &&
+                    meta.coverFrom <= from &&
+                    meta.coverTo >= windowEnd
+                ) {
+                    dao.programmes(provider.id, from, windowEnd)
+                        .map { it.toProgramme() }
+                        .groupBy { it.channelEpgId }
+                } else {
+                    null
+                }
+            }.getOrNull()
+            if (!saved.isNullOrEmpty()) return@withContext Result.success(saved)
+        }
 
         val file = File(context.cacheDir, "epg_${provider.id}.xml")
         val isFresh = file.exists() &&
@@ -70,14 +109,37 @@ class EpgRepository(private val context: Context) {
                     if (!file.exists()) throw e // no saved copy to fall back on
                 }
             }
-            val data = openMaybeGzip(file).use {
-                XmltvParser.parse(it, wanted, from, from + EpgTime.GUIDE_HOURS * 60 * 60_000L)
+            // Read more hours than the guide shows, so the saved copy stays useful for the next several hours.
+            val saveUntil = from + SAVE_HOURS * HOUR_MS
+            val parsed = openMaybeGzip(file).use { XmltvParser.parse(it, wanted, from, saveUntil) }
+            if (parsed.isEmpty()) {
+                return@withContext Result.failure(
+                    IOException("The TV guide loaded, but none of its shows match your channels.")
+                )
             }
-            if (data.isEmpty()) {
-                Result.failure(IOException("The TV guide loaded, but none of its shows match your channels."))
-            } else {
-                Result.success(data)
+
+            runCatching {
+                val rows = parsed.values.flatMap { list ->
+                    list.map { p ->
+                        ProgrammeRow(
+                            providerId = provider.id,
+                            channelEpgId = p.channelEpgId,
+                            title = p.title,
+                            description = p.description.take(MAX_DESCRIPTION),
+                            genre = p.genre,
+                            start = p.start,
+                            stop = p.stop,
+                            iconUrl = p.iconUrl,
+                        )
+                    }
+                }
+                dao.replaceGuide(provider.id, rows, EpgMeta(provider.id, now, from, saveUntil, wantedHash))
             }
+
+            val shown = parsed
+                .mapValues { (_, list) -> list.filter { it.start < windowEnd } }
+                .filterValues { it.isNotEmpty() }
+            Result.success(shown)
         } catch (e: Exception) {
             Result.failure(IOException(friendly(e)))
         }
@@ -184,6 +246,11 @@ class EpgRepository(private val context: Context) {
     }
 
     private companion object {
-        const val CACHE_MAX_AGE_MS = 6L * 60 * 60 * 1000 // 6 hours
+        const val HOUR_MS = 60 * 60_000L
+        const val CACHE_MAX_AGE_MS = 6L * HOUR_MS
+        /** How many hours of guide are kept in the database. More than the 24 shown, so it lasts. */
+        const val SAVE_HOURS = 48
+        /** Long descriptions are shortened in the database to keep it small. */
+        const val MAX_DESCRIPTION = 600
     }
 }

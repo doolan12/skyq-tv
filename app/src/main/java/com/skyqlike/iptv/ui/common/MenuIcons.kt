@@ -147,10 +147,6 @@ fun MenuIcon(name: String, tint: Color, size: Dp = 22.dp, modifier: Modifier = M
                     )
                 }
             }
-            "stremio" -> {
-                box(0.14f, 0.14f, 0.72f, 0.72f, 0.16f)
-                poly(true, 0.42f, 0.34f, 0.66f, 0.50f, 0.42f, 0.66f)
-            }
             "categories" -> {
                 seg(0.16f, 0.28f, 0.84f, 0.28f)
                 seg(0.16f, 0.50f, 0.84f, 0.50f)

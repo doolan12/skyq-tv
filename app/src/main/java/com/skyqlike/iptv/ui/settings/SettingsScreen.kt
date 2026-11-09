@@ -64,19 +64,16 @@ fun SettingsScreen(
     onClearCache: () -> Unit,
     onClearHistory: () -> Unit,
     providersContent: @Composable () -> Unit,
-    stremioSummary: String = "",
-    stremioContent: @Composable () -> Unit = {},
 ) {
     var page by remember { mutableStateOf("main") }
     BackHandler(enabled = page != "main") { page = "main" }
 
     when (page) {
         "providers" -> providersContent()
-        "stremio" -> stremioContent()
         "playback" -> PlaybackPage(settings, onChange)
         "parental" -> ParentalPage(settings, onChange, adultUnlocked, onAdultUnlockedChange)
         "channels" -> ChannelsPage(settings, onChange, allChannels)
-        "data" -> DataPage(status, busy, onRefreshPlaylist, onRefreshGuide, onClearCache, onClearHistory)
+        "data" -> DataPage(status, busy, settings, onChange, onRefreshPlaylist, onRefreshGuide, onClearCache, onClearHistory)
         "about" -> AboutPage(providerName, visibleCount, allChannels.size)
         else -> Page("Settings") {
             val parentalSummary = when {
@@ -86,7 +83,6 @@ fun SettingsScreen(
             }
             LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 item { SettingRow("IPTV providers", summary = "In use: $providerName") { page = "providers" } }
-                item { SettingRow("Stremio account", summary = stremioSummary.ifBlank { "Sign in to Stremio and manage addons" }) { page = "stremio" } }
                 item { SettingRow("Playback", summary = "Picture size, subtitles, audio language, reconnecting") { page = "playback" } }
                 item { SettingRow("Channels", summary = "$visibleCount of ${allChannels.size} channels shown. Hide and reorder.") { page = "channels" } }
                 item { SettingRow("Parental controls", summary = parentalSummary) { page = "parental" } }
@@ -499,6 +495,8 @@ private fun ChannelList(settings: AppSettings, onChange: (AppSettings) -> Unit, 
 private fun DataPage(
     status: String,
     busy: Boolean,
+    settings: AppSettings,
+    onChange: (AppSettings) -> Unit,
     onRefreshPlaylist: () -> Unit,
     onRefreshGuide: () -> Unit,
     onClearCache: () -> Unit,
@@ -520,6 +518,13 @@ private fun DataPage(
                     if (busy) "Working..." else "",
                     "Download only the TV guide again. Channels stay as they are.",
                 ) { if (!busy) onRefreshGuide() }
+            }
+            item {
+                SettingRow(
+                    "Update TV guide automatically",
+                    onOff(settings.autoGuideUpdate),
+                    "Downloads a fresh guide in the background every few hours, so it is ready when you turn on.",
+                ) { onChange(settings.copy(autoGuideUpdate = !settings.autoGuideUpdate)) }
             }
             item {
                 SettingRow(

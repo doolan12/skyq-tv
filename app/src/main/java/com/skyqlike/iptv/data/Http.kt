@@ -25,25 +25,6 @@ internal object Http {
         }
     }
 
-    /** Sends JSON and returns the reply text, even for error codes (Stremio puts its error message in the reply). */
-    fun post(address: String, jsonBody: String, readTimeoutMs: Int = 30_000): String {
-        val conn = URL(address).openConnection() as HttpURLConnection
-        conn.connectTimeout = 15_000
-        conn.readTimeout = readTimeoutMs
-        conn.requestMethod = "POST"
-        conn.doOutput = true
-        conn.setRequestProperty("Content-Type", "application/json")
-        conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) SkyQLikeIPTV/0.1")
-        try {
-            conn.outputStream.use { it.write(jsonBody.toByteArray(Charsets.UTF_8)) }
-            val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            return stream?.bufferedReader()?.use { it.readText() } ?: ""
-        } finally {
-            conn.disconnect()
-        }
-    }
-
     fun friendly(e: Exception): String = when {
         e is UnknownHostException -> "Can't reach that server. Check the address and your internet."
         e is SocketTimeoutException -> "The server took too long to answer."
