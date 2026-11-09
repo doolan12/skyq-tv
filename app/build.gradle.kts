@@ -13,8 +13,19 @@ android {
         applicationId = "com.skyqlike.iptv"
         minSdk = 22          // covers older Fire TV sticks and Android TV boxes
         targetSdk = 34
-        versionCode = 22
-        versionName = "1.9.0"
+        versionCode = 23
+        versionName = "1.9.1"
+    }
+
+    // One fixed signing key for every build. Android only lets an update install over the old app
+    // (keeping its saved logins and settings) when both were signed with the same key.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
