@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -84,6 +85,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
+import android.media.audiofx.LoudnessEnhancer
 import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Text
 import kotlin.math.roundToInt
@@ -102,6 +104,10 @@ private const val MAX_RETRIES = 5
 
 /** The show or film a play item belongs to, so choices carry over between its episodes. */
 private fun trackBase(item: PlayItem): String = item.key.removePrefix("stremio:").substringBefore('|')
+
+private val SleepChoices = listOf(0, 30, 60, 90)
+private val BoostChoices = listOf(0, 4, 8)
+private val BoostLabels = listOf("Off", "Medium", "High")
 
 private val SpeedChoices = listOf(0.75f, 1f, 1.25f, 1.5f, 2f)
 
@@ -174,6 +180,9 @@ fun PlayerScreen(
     var durationMs by remember { mutableLongStateOf(0L) }
     var endedTick by remember { mutableIntStateOf(0) }
     var showEpisodes by remember { mutableStateOf(false) }
+    var showCast by remember { mutableStateOf(false) }
+    var sleepIndex by remember { mutableIntStateOf(0) }
+    var boostIndex by remember { mutableIntStateOf(0) }
     var subOffsetMs by remember { mutableLongStateOf(0L) }
     val uiPrefs = remember { context.getSharedPreferences("player_ui", android.content.Context.MODE_PRIVATE) }
     var subStyleIndex by remember { mutableIntStateOf(uiPrefs.getInt("substyle", 1).coerceIn(0, SubStyles.lastIndex)) }
@@ -357,6 +366,7 @@ fun PlayerScreen(
         durationMs = 0L
         subOffsetMs = 0L
         showEpisodes = false
+        showCast = false
         val mediaItem = buildMediaItem(cur)
         if (subtitlesOn && cur.subtitles.isNotEmpty()) {
             exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
@@ -400,8 +410,8 @@ fun PlayerScreen(
     }
 
     // Controls hide by themselves after a few seconds.
-    LaunchedEffect(overlay, overlayTick, picker, showEpisodes) {
-        if (overlay && picker == null && !showEpisodes && !failed) {
+    LaunchedEffect(overlay, overlayTick, picker, showEpisodes, showCast) {
+        if (overlay && picker == null && !showEpisodes && !showCast && !failed) {
             delay(7_000)
             overlay = false
         }
@@ -429,10 +439,10 @@ fun PlayerScreen(
     val firstButtonFocus = remember { FocusRequester() }
     val pickerFocus = remember { FocusRequester() }
 
-    LaunchedEffect(overlay, picker, showEpisodes) {
+    LaunchedEffect(overlay, picker, showEpisodes, showCast) {
         runCatching {
             when {
-                picker != null || showEpisodes -> pickerFocus.requestFocus()
+                picker != null || showEpisodes || showCast -> pickerFocus.requestFocus()
                 overlay -> firstButtonFocus.requestFocus()
                 else -> rootFocus.requestFocus()
             }
@@ -440,7 +450,7 @@ fun PlayerScreen(
     }
 
     BackHandler {
-        if (showEpisodes) showEpisodes = false else if (picker != null) picker = null else onClose()
+        if (showCast) showCast = false else if (showEpisodes) showEpisodes = false else if (picker != null) picker = null else onClose()
     }
 
     val item = playlist[index]
@@ -450,7 +460,7 @@ fun PlayerScreen(
     var upNextTried by remember(index) { mutableStateOf(false) }
     val remainingMs = if (durationMs > 0L) durationMs - positionMs else Long.MAX_VALUE
     val nearEnd = nextEpisode != null && autoNext && item.kind == PlayKind.EPISODE &&
-        index == playlist.lastIndex && remainingMs < 60_000L
+        index == playlist.lastIndex && remainingMs < 100_000L
     LaunchedEffect(index, nearEnd) {
         if (nearEnd && !upNextTried) {
             upNextTried = true
@@ -499,6 +509,30 @@ fun PlayerScreen(
     fun showHud(text: String) {
         hud = text
         hudTick++
+    }
+
+    // Sleep timer: pauses by itself after the chosen time, so you can fall asleep to it.
+    LaunchedEffect(sleepIndex) {
+        val mins = SleepChoices[sleepIndex]
+        if (mins > 0) {
+            delay(mins * 60_000L)
+            saveProgress()
+            exo.pause()
+            overlay = true
+            showHud("Sleep timer: paused")
+            sleepIndex = 0
+        }
+    }
+
+    // Volume boost for quiet dialogue.
+    val enhancer = remember(exo) { runCatching { LoudnessEnhancer(exo.audioSessionId) }.getOrNull() }
+    DisposableEffect(enhancer) { onDispose { runCatching { enhancer?.release() } } }
+    LaunchedEffect(boostIndex, enhancer) {
+        runCatching {
+            val g = BoostChoices[boostIndex]
+            enhancer?.setTargetGain(g * 100)
+            enhancer?.enabled = g > 0
+        }
     }
 
     // Subtitles out of step? Shift them earlier or later and reload at the same spot.
@@ -922,6 +956,17 @@ fun PlayerScreen(
                         PlayerButton("Subs -0.5s", Modifier.width(120.dp)) { bump(); nudgeSubs(-500) }
                         PlayerButton("Subs +0.5s", Modifier.width(120.dp)) { bump(); nudgeSubs(500) }
                     }
+                    if (item.cast.isNotEmpty() || item.director.isNotBlank()) {
+                        PlayerButton("Cast", Modifier.width(100.dp)) { showCast = true }
+                    }
+                    PlayerButton("Sleep: " + (if (sleepIndex == 0) "Off" else "${SleepChoices[sleepIndex]}m"), Modifier.width(140.dp)) {
+                        bump()
+                        sleepIndex = (sleepIndex + 1) % SleepChoices.size
+                    }
+                    PlayerButton("Boost: ${BoostLabels[boostIndex]}", Modifier.width(150.dp)) {
+                        bump()
+                        boostIndex = (boostIndex + 1) % BoostChoices.size
+                    }
                     if (episodes.isNotEmpty() && resolveEpisode != null) {
                         PlayerButton("Episodes", Modifier.width(120.dp)) { showEpisodes = true }
                     }
@@ -948,6 +993,42 @@ fun PlayerScreen(
                     }
                 }
             }
+        }
+
+        // Who's in it.
+        if (showCast) {
+            Column(
+                Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(24.dp)
+                    .width(380.dp)
+                    .fillMaxHeight(0.9f)
+                    .background(Color(0xE6101014), RoundedCornerShape(16.dp))
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(item.title, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (item.director.isNotBlank()) {
+                        item { Text("Directed by", fontSize = 13.sp, color = Palette.TextSecondary) }
+                        item { Text(item.director, fontSize = 17.sp, color = Palette.TextPrimary) }
+                    }
+                    if (item.cast.isNotEmpty()) {
+                        item { Text("Starring", fontSize = 13.sp, color = Palette.TextSecondary, modifier = Modifier.padding(top = 8.dp)) }
+                        items(item.cast.size) { i -> Text(item.cast[i], fontSize = 17.sp, color = Palette.TextPrimary) }
+                    }
+                }
+                PlayerButton("Close", Modifier.fillMaxWidth().focusRequester(pickerFocus), accent = true) { showCast = false }
+            }
+        }
+
+        // Skip credits: in the last minute or two of an episode, jump straight to the next one.
+        if (upNext != null && !showUpNext && remainingMs < 100_000L && picker == null && !showEpisodes && !showCast && !failed) {
+            PlayerButton(
+                "Skip credits",
+                Modifier.align(Alignment.BottomEnd).padding(end = 40.dp, bottom = if (overlay) 190.dp else 60.dp).width(190.dp),
+                accent = true,
+            ) { playNext() }
         }
 
         // Episode list on the right.

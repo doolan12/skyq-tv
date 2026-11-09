@@ -415,6 +415,8 @@ class StremioRepository(private val apiBase: String = "https://api.strem.io") {
             sourceBase = item.sourceBase,
             videos = videos.sortedWith(compareBy({ it.season }, { it.episode })),
             trailerId = trailerFrom(m) ?: item.trailerId,
+            cast = strList(m.optJSONArray("cast")).ifEmpty { item.cast },
+            director = strList(m.optJSONArray("director")).joinToString(", ").ifEmpty { item.director },
         )
     }
 

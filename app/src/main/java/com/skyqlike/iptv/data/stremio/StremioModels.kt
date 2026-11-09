@@ -58,6 +58,9 @@ data class StremioItem(
     val videos: List<StremioVideo> = emptyList(),
     /** The YouTube video id of the trailer, if the addon lists one. */
     val trailerId: String? = null,
+    /** Actors and director from the addon, for the player's Cast panel. */
+    val cast: List<String> = emptyList(),
+    val director: String = "",
 )
 
 data class StremioRow(val title: String, val type: String, val items: List<StremioItem>)

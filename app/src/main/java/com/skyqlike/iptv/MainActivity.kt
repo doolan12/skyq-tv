@@ -346,6 +346,8 @@ private fun ReelApp(context: Context) {
                     externalId = nv.id,
                     subtitles = moreSubs,
                     streamKey = "series|${nv.id}",
+                    cast = title.cast,
+                    director = title.director,
                 )
             }
             var nextResolver: (suspend (PlayItem) -> PlayItem?)? = null
@@ -379,6 +381,8 @@ private fun ReelApp(context: Context) {
                             externalId = video?.id,
                             subtitles = subs,
                             streamKey = "$subType|$videoId",
+                            cast = title.cast,
+                            director = title.director,
                         )
                     ),
                     0,
