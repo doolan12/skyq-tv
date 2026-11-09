@@ -2,7 +2,16 @@
 
 package com.skyqlike.iptv.ui.player
 
+import android.app.PictureInPictureParams
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.pm.PackageManager
+import android.os.Build
+import android.util.Rational
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.core.app.PictureInPictureModeChangedInfo
+import androidx.core.util.Consumer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -61,6 +70,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -78,6 +88,54 @@ import java.util.Date
 import java.util.Locale
 
 private const val MAX_RETRIES = 5
+
+/** The sleep timer choices, in minutes. */
+private val SleepChoicesMin = listOf(15, 30, 60, 90)
+
+/** Finds the Activity that holds this screen. */
+private fun Context.findActivity(): android.app.Activity? {
+    var c: Context? = this
+    while (c is ContextWrapper) {
+        if (c is android.app.Activity) return c
+        c = c.baseContext
+    }
+    return null
+}
+
+/** The web status code (like 403 or 404) behind a playback error, or null if it wasn't a web error. */
+private fun httpStatusOf(error: PlaybackException): Int? {
+    var cause: Throwable? = error
+    while (cause != null) {
+        if (cause is HttpDataSource.InvalidResponseCodeException) return cause.responseCode
+        cause = cause.cause
+    }
+    return null
+}
+
+/** Turns a playback error into a message a person can act on. */
+private fun friendlyPlayerError(error: PlaybackException): String {
+    when (httpStatusOf(error)) {
+        401, 403 -> return "The provider refused this stream. Check your login, or your subscription may have expired."
+        404 -> return "This channel isn't available right now. The provider may have removed it."
+        429 -> return "Too many connections on this account. Close the provider on other devices and try again."
+        in 500..599 -> return "The provider's server has a problem. Try again in a few minutes."
+    }
+    return when (error.errorCode) {
+        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ->
+            "Can't reach the stream. Check your internet connection."
+        PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
+        PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED,
+        PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
+        PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED ->
+            "This stream's format isn't supported, or the provider sent something that isn't video."
+        PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+        PlaybackException.ERROR_CODE_DECODING_FAILED,
+        PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED ->
+            "This device couldn't play this video format."
+        else -> "This isn't playing. The stream may be offline."
+    }
+}
 private val ResizeModes = intArrayOf(
     AspectRatioFrameLayout.RESIZE_MODE_FIT,
     AspectRatioFrameLayout.RESIZE_MODE_ZOOM,
@@ -128,6 +186,9 @@ fun PlayerScreen(
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
     var endedTick by remember { mutableIntStateOf(0) }
+    var sleepEndsAt by remember { mutableLongStateOf(0L) } // 0 = sleep timer off
+    var sleepStep by remember { mutableIntStateOf(0) } // 0 = off, then 1..4 = the choices in SleepChoicesMin
+    var inPip by remember { mutableStateOf(false) }
     var digits by remember { mutableStateOf("") } // channel number being typed on the remote
     var digitTick by remember { mutableIntStateOf(0) }
 
@@ -189,7 +250,9 @@ fun PlayerScreen(
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                if (autoReconnect && attempts[0] < MAX_RETRIES) {
+                // A refused login or a missing stream won't fix itself, so don't keep retrying those.
+                val worthRetrying = httpStatusOf(error) !in setOf(401, 403, 404)
+                if (autoReconnect && worthRetrying && attempts[0] < MAX_RETRIES) {
                     attempts[0]++
                     val myToken = token[0]
                     val n = attempts[0]
@@ -206,7 +269,7 @@ fun PlayerScreen(
                 } else {
                     failed = true
                     buffering = false
-                    statusMessage = "This isn't playing. The stream may be offline."
+                    statusMessage = friendlyPlayerError(error)
                     overlay = true
                 }
             }
@@ -216,6 +279,49 @@ fun PlayerScreen(
             saveProgress()
             exo.removeListener(listener)
             exo.release()
+        }
+    }
+
+    // Sleep timer: when the time is up, stop playing and leave the player.
+    LaunchedEffect(sleepEndsAt) {
+        if (sleepEndsAt > 0L) {
+            val wait = sleepEndsAt - System.currentTimeMillis()
+            if (wait > 0L) delay(wait)
+            saveProgress()
+            exo.pause()
+            onClose()
+        }
+    }
+
+    // Picture-in-picture: a small floating window, where the device supports it.
+    val activity = remember(context) { context.findActivity() }
+    val pipSupported = remember(context) {
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            context.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
+    }
+    DisposableEffect(activity, pipSupported) {
+        val pipActivity = activity as? ComponentActivity
+        val listener = Consumer<PictureInPictureModeChangedInfo> { info ->
+            inPip = info.isInPictureInPictureMode
+            if (inPip) {
+                overlay = false
+                picker = null
+            }
+        }
+        pipActivity?.addOnPictureInPictureModeChangedListener(listener)
+        // On Android 12 and newer, pressing Home while watching shrinks the video into the window by itself.
+        if (pipSupported && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            activity?.setPictureInPictureParams(
+                PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).setAutoEnterEnabled(true).build()
+            )
+        }
+        onDispose {
+            pipActivity?.removeOnPictureInPictureModeChangedListener(listener)
+            if (pipSupported && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                activity?.setPictureInPictureParams(
+                    PictureInPictureParams.Builder().setAutoEnterEnabled(false).build()
+                )
+            }
         }
     }
 
@@ -606,6 +712,27 @@ fun PlayerScreen(
                     PlayerButton("Aspect: ${ResizeLabels[resizeIndex]}", Modifier.width(160.dp)) {
                         bump()
                         resizeIndex = (resizeIndex + 1) % ResizeModes.size
+                    }
+                    val sleepLeftMin = if (sleepEndsAt > 0L) ((sleepEndsAt - nowMs + 59_999L) / 60_000L).coerceAtLeast(1L) else 0L
+                    PlayerButton(
+                        if (sleepEndsAt > 0L) "Sleep: ${sleepLeftMin}m" else "Sleep: Off",
+                        Modifier.width(140.dp),
+                    ) {
+                        bump()
+                        // Each press moves to the next choice: off, 15, 30, 60, 90 minutes, then off again.
+                        sleepStep = (sleepStep + 1) % (SleepChoicesMin.size + 1)
+                        sleepEndsAt = if (sleepStep == 0) 0L
+                        else System.currentTimeMillis() + SleepChoicesMin[sleepStep - 1] * 60_000L
+                        nowMs = System.currentTimeMillis()
+                    }
+                    if (pipSupported) {
+                        PlayerButton("Mini player", Modifier.width(140.dp)) {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                activity?.enterPictureInPictureMode(
+                                    PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build()
+                                )
+                            }
+                        }
                     }
                 }
             }

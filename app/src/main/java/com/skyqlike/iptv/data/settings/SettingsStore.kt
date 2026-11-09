@@ -1,6 +1,7 @@
 package com.skyqlike.iptv.data.settings
 
 import android.content.Context
+import com.skyqlike.iptv.data.Secure
 import com.skyqlike.iptv.data.model.Channel
 import com.skyqlike.iptv.data.model.favKey
 import org.json.JSONArray
@@ -26,13 +27,20 @@ data class AppSettings(
 class SettingsStore(context: Context) {
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
-    fun load(): AppSettings = AppSettings(
+    fun load(): AppSettings {
+        val settings = read()
+        // A PIN saved by an older version is locked the first time it is read.
+        if (Secure.needsLocking(prefs.getString("pin", "") ?: "")) save(settings)
+        return settings
+    }
+
+    private fun read(): AppSettings = AppSettings(
         aspect = prefs.getInt("aspect", 0),
         autoReconnect = prefs.getBoolean("autoReconnect", true),
         resume = prefs.getBoolean("resume", true),
         subtitlesOn = prefs.getBoolean("subtitlesOn", false),
         audioLang = prefs.getString("audioLang", "") ?: "",
-        pin = prefs.getString("pin", "") ?: "",
+        pin = Secure.unlock(prefs.getString("pin", "") ?: ""),
         hiddenGroups = prefs.getStringSet("hiddenGroups", emptySet())?.toSet() ?: emptySet(),
         hiddenChannels = prefs.getStringSet("hiddenChannels", emptySet())?.toSet() ?: emptySet(),
         groupOrder = readList(prefs.getString("groupOrder", null)),
@@ -47,7 +55,7 @@ class SettingsStore(context: Context) {
             .putBoolean("resume", s.resume)
             .putBoolean("subtitlesOn", s.subtitlesOn)
             .putString("audioLang", s.audioLang)
-            .putString("pin", s.pin)
+            .putString("pin", Secure.lock(s.pin))
             .putStringSet("hiddenGroups", s.hiddenGroups)
             .putStringSet("hiddenChannels", s.hiddenChannels)
             .putString("groupOrder", order.toString())
