@@ -323,6 +323,12 @@ fun BrowseScreen(
             val portrait = config.screenHeightDp > config.screenWidthDp
             val posterW = if (phone && portrait) 112.dp else 130.dp
             val posterH = if (phone && portrait) 168.dp else 195.dp
+            // On a phone the first tap on a poster picks it (the strip above changes to match); tapping the picked one opens it.
+            val tapOpen: (StremioItem) -> Unit = { item ->
+                val shown = heroNow
+                if (phone && browsing && !(shown != null && shown.id == item.id && shown.type == item.type)) onHeroFocus(item)
+                else onOpen(item)
+            }
             val toggle: (StremioItem) -> Unit = { actions.onToggleFavourite(it) }
             val rails = ArrayList<RailSpec>()
 
@@ -330,7 +336,7 @@ fun BrowseScreen(
             val shownKeys = HashSet<String>()
             fun add(title: String, items: List<StremioItem>, w: Dp = posterW, h: Dp = posterH) {
                 items.forEach { shownKeys += it.type + ":" + it.id }
-                if (items.isNotEmpty()) rails += RailSpec(Rail(title, items.map { tileFor(it, onOpen, toggle, topPostersKey, onHeroFocus) }), w, h)
+                if (items.isNotEmpty()) rails += RailSpec(Rail(title, items.map { tileFor(it, tapOpen, toggle, topPostersKey, onHeroFocus) }), w, h)
             }
 
             // A numbered row. With a TMDB key it shows what is trending today. Without one it shows the
@@ -344,7 +350,7 @@ fun BrowseScreen(
                 val live = (if (rowType == "movie") trending?.movies else trending?.series).orEmpty().take(10)
                 if (live.size >= 5) {
                     live.forEach { shownKeys += it.type + ":" + it.id }
-                    rails += RailSpec(Rail("Trending $word Today", live.map { tileFor(it, onOpen, toggle, topPostersKey, onHeroFocus) }), posterW, posterH, top10 = true)
+                    rails += RailSpec(Rail("Trending $word Today", live.map { tileFor(it, tapOpen, toggle, topPostersKey, onHeroFocus) }), posterW, posterH, top10 = true)
                     return
                 }
                 val first = state.home.rows.firstOrNull { it.type == rowType } ?: return
@@ -352,7 +358,7 @@ fun BrowseScreen(
                 if (items.size < 5) return
                 usedForTop10 += first
                 items.forEach { shownKeys += it.type + ":" + it.id }
-                rails += RailSpec(Rail("Popular $word", items.map { tileFor(it, onOpen, toggle, topPostersKey, onHeroFocus) }), posterW, posterH, top10 = true)
+                rails += RailSpec(Rail("Popular $word", items.map { tileFor(it, tapOpen, toggle, topPostersKey, onHeroFocus) }), posterW, posterH, top10 = true)
             }
 
             fun addContinue(filterType: String?) {
@@ -572,7 +578,7 @@ fun BrowseScreen(
                     else TopBar(tab, selectTab, profile, onSettings, onSwitchProfile, onShuffle)
                     if (showBanner) {
                         val hero = focusedHero?.takeIf { browsing } ?: heroItems[heroIndex.coerceIn(0, heroItems.size - 1)]
-                        InfoStrip(hero, compact = !isTv)
+                        InfoStrip(hero, compact = !isTv, onOpen = if (phone) ({ onOpen(hero) }) else null)
                     }
                 }
             }
@@ -819,7 +825,7 @@ private fun PhoneTopBar(profile: Profile, onSettings: () -> Unit, onSwitchProfil
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text("REELHOUSE", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = Palette.Accent, letterSpacing = 2.sp, modifier = Modifier.weight(1f))
+        Text("REELHOUSE", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = Palette.Accent, letterSpacing = 1.sp, maxLines = 1, softWrap = false, modifier = Modifier.weight(1f))
         NavItem("Shuffle", false, 84.dp, 14.sp) { onShuffle() }
         NavItem("Settings", false, 84.dp, 14.sp) { onSettings() }
         FocusTile(
@@ -881,10 +887,11 @@ private fun NavItem(label: String, selected: Boolean, width: Dp, fontSize: TextU
 
 /** A short strip of facts about the selected title: name, year and rating, genres, and a couple of lines of story. */
 @Composable
-private fun InfoStrip(item: StremioItem, compact: Boolean) {
+private fun InfoStrip(item: StremioItem, compact: Boolean, onOpen: (() -> Unit)? = null) {
     Column(
         Modifier
             .fillMaxWidth()
+            .then(if (onOpen != null) Modifier.clickable { onOpen() } else Modifier)
             .height(if (compact) 80.dp else 112.dp)
             .padding(horizontal = LocalSidePad.current, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -900,6 +907,7 @@ private fun InfoStrip(item: StremioItem, compact: Boolean) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(if (item.type == "series") "SERIES" else "FILM", fontSize = 12.sp, color = Palette.Accent, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
             MetaLine(item.year, "", item.rating, fontSize = 13.sp)
+            if (onOpen != null) Text("Open ›", fontSize = 13.sp, color = Color.White, fontWeight = FontWeight.Bold)
             if (item.genres.isNotEmpty()) {
                 Text(item.genres.take(3).joinToString("  •  "), fontSize = 13.sp, color = Color(0xFFD0D0D8), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
