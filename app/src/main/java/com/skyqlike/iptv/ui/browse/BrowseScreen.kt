@@ -105,6 +105,8 @@ class BrowseUi {
     /** My List order: 0 = recently added, 1 = A to Z, 2 = top rated. */
     var listSort by mutableIntStateOf(0)
     val list = LazyListState()
+    /** The poster the remote was last on, so Back from a title puts it there again. (Not state: reading it must not redraw anything.) */
+    var lastTile: String? = null
 }
 
 private const val TAB_HOME = 0
@@ -182,6 +184,7 @@ fun BrowseScreen(
 
     val selectTab: (Int) -> Unit = {
         ui.tab = it
+        ui.lastTile = null
         ui.genre = null
         focusedHero = null
         heroIndex = 0
@@ -561,6 +564,18 @@ fun BrowseScreen(
                 }
             }
 
+            // Load the posters in the rows just below the screen ahead of time, so they're already there when you scroll.
+            val prefetchContext = androidx.compose.ui.platform.LocalContext.current
+            LaunchedEffect(rails.size, tab) {
+                val loader = coil.Coil.imageLoader(prefetchContext)
+                rails.take(8).forEach { spec ->
+                    spec.rail.tiles.take(8).forEach { t ->
+                        val u = t.imageUrl
+                        if (!u.isNullOrBlank()) loader.enqueue(coil.request.ImageRequest.Builder(prefetchContext).data(u).build())
+                    }
+                }
+            }
+
             val genreList: List<String> = if (type == null) emptyList() else run {
                 val fromLists = state.home.addons.flatMap { a ->
                     a.catalogs.filter { it.type == type && it.genreOnly }.flatMap { it.genreOptions }
@@ -644,8 +659,25 @@ fun BrowseScreen(
                 }
                 if (tab == TAB_SEARCH) {
                     item {
-                        Box(Modifier.fillMaxWidth().padding(horizontal = LocalSidePad.current)) {
+                        Column(Modifier.fillMaxWidth().padding(horizontal = LocalSidePad.current), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             LabeledField("Search movies and series", ui.query) { ui.query = it }
+                            // Say the title instead of typing it (shown when the device has speech recognition).
+                            val ctx = androidx.compose.ui.platform.LocalContext.current
+                            val speech = remember {
+                                android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                                    .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                                    .putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "Say a movie or series")
+                            }
+                            val canSpeak = remember { runCatching { ctx.packageManager.resolveActivity(speech, 0) != null }.getOrDefault(false) }
+                            val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
+                                androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+                            ) { r ->
+                                val said = r.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+                                if (!said.isNullOrBlank()) ui.query = said
+                            }
+                            if (canSpeak) {
+                                ActionButton("Search by voice", Modifier.width(200.dp)) { runCatching { launcher.launch(speech) } }
+                            }
                         }
                     }
                 }
@@ -700,8 +732,9 @@ fun BrowseScreen(
                     }
                 }
                 itemsIndexed(rails, key = { i, r -> "$i|${r.rail.title}" }) { _, spec ->
-                    if (spec.top10) Top10Row(spec.rail.title, spec.rail.tiles, spec.width, spec.height)
-                    else RailRow(spec.rail, spec.width, spec.height)
+                    val back = if (phone) null else ui.lastTile
+                    if (spec.top10) Top10Row(spec.rail.title, spec.rail.tiles, spec.width, spec.height, back) { ui.lastTile = it }
+                    else RailRow(spec.rail, spec.width, spec.height, back) { ui.lastTile = it }
                 }
             }
             // Pull the list down from the top (on a touch screen) to refresh Home.

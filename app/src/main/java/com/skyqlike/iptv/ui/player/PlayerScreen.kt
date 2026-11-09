@@ -228,6 +228,13 @@ fun PlayerScreen(
 
     fun buildMediaItem(cur: PlayItem, shifted: Map<String, Uri> = emptyMap()): MediaItem = MediaItem.Builder()
             .setUri(cur.url)
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder()
+                    .setTitle(cur.title)
+                    .setSubtitle(cur.subtitle)
+                    .setArtworkUri(cur.imageUrl?.let { Uri.parse(it) })
+                    .build()
+            )
             .setSubtitleConfigurations(
                 cur.subtitles.map { s ->
                     val path = s.url.substringBefore('?').lowercase()
@@ -326,6 +333,12 @@ fun PlayerScreen(
             exo.release()
         }
     }
+
+    // Lets the remote's media buttons, voice assistants ("pause") and the system see what's playing.
+    val mediaSession = remember(exo) {
+        runCatching { androidx.media3.session.MediaSession.Builder(context, exo).build() }.getOrNull()
+    }
+    DisposableEffect(mediaSession) { onDispose { runCatching { mediaSession?.release() } } }
 
     // The video always plays sideways; the rest of the app can be upright on a phone.
     DisposableEffect(Unit) {
@@ -621,6 +634,22 @@ fun PlayerScreen(
         }
     }
 
+    // Holding Left or Right winds faster the longer you hold: 10 seconds, then 30, then a minute at a time.
+    fun seekHeld(dir: Int, repeat: Int): Boolean {
+        if (repeat > 0 && repeat % 4 != 0) return true
+        val step = when {
+            repeat < 8 -> 10_000L
+            repeat < 24 -> 30_000L
+            else -> 60_000L
+        }
+        val ok = seekBy(dir * step)
+        if (ok) {
+            positionMs = exo.currentPosition
+            showHud((if (dir > 0) "+" else "-") + (step / 1000) + "s     " + formatTime(positionMs) + " / " + formatTime(durationMs))
+        }
+        return ok
+    }
+
     val handleKey: (KeyEvent) -> Boolean = handle@{ ev ->
         if (ev.type != KeyEventType.KeyDown) return@handle false
         bump()
@@ -646,8 +675,8 @@ fun PlayerScreen(
             }
             when (ev.key) {
                 Key.DirectionUp, Key.DirectionDown -> { overlay = true; true }
-                Key.DirectionLeft -> seekBy(-10_000)
-                Key.DirectionRight -> seekBy(10_000)
+                Key.DirectionLeft -> seekHeld(-1, ev.nativeKeyEvent.repeatCount)
+                Key.DirectionRight -> seekHeld(1, ev.nativeKeyEvent.repeatCount)
                 Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> { overlay = true; true }
                 else -> false
             }
@@ -774,6 +803,15 @@ fun PlayerScreen(
                     )
                 }
         )
+
+        // While winding with the remote, a bar along the bottom shows where you are.
+        if (hud?.contains(" / ") == true && durationMs > 0L) {
+            Box(
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 40.dp, vertical = 28.dp).height(8.dp).background(Color(0x66FFFFFF)),
+            ) {
+                Box(Modifier.fillMaxWidth((positionMs.toFloat() / durationMs).coerceIn(0f, 1f)).fillMaxHeight().background(Palette.Accent))
+            }
+        }
 
         // Small message in the middle-top: "+10s", "Volume 60%" and so on.
         hud?.let { text ->

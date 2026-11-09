@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
@@ -69,6 +70,9 @@ fun RailRow(
     rail: Rail,
     tileWidth: Dp = 150.dp,
     tileHeight: Dp = 225.dp,
+    /** The tile the remote was on last time (when coming back to this screen), and a way to report the current one. */
+    restoreId: String? = null,
+    onTileFocused: (String) -> Unit = {},
 ) {
     Column {
         if (rail.title.isNotBlank()) {
@@ -83,13 +87,29 @@ fun RailRow(
         // The vertical padding leaves room for a tile to grow when the remote lands on it.
         // While the remote is in this row, the posters you're not on dim a little so the one you're on stands out.
         var rowFocused by remember { mutableStateOf(false) }
+        val at = if (restoreId == null) -1 else rail.tiles.indexOfFirst { it.id == restoreId }
+        val restoreFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+        val rowState = androidx.compose.foundation.lazy.rememberLazyListState(initialFirstVisibleItemIndex = maxOf(0, at - 1))
+        if (at >= 0) {
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                kotlinx.coroutines.delay(250)
+                runCatching { restoreFocus.requestFocus() }
+            }
+        }
         LazyRow(
+            state = rowState,
             modifier = Modifier.onFocusChanged { rowFocused = it.hasFocus },
             contentPadding = PaddingValues(horizontal = LocalSidePad.current, vertical = 14.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            itemsIndexed(rail.tiles, key = { i, t -> "$i|${rail.title}|${t.id}" }) { _, tile ->
-                PosterTile(tile, tileWidth, tileHeight, dimWhenOthersFocused = rowFocused)
+            itemsIndexed(rail.tiles, key = { i, t -> "$i|${rail.title}|${t.id}" }) { i, tile ->
+                PosterTile(
+                    tile.copy(onFocus = { tile.onFocus?.invoke(); onTileFocused(tile.id) }),
+                    tileWidth,
+                    tileHeight,
+                    dimWhenOthersFocused = rowFocused,
+                    focusRequester = if (i == at) restoreFocus else null,
+                )
             }
         }
     }
@@ -105,6 +125,8 @@ fun Top10Row(
     tiles: List<HomeTile>,
     tileWidth: Dp = 130.dp,
     tileHeight: Dp = 195.dp,
+    restoreId: String? = null,
+    onTileFocused: (String) -> Unit = {},
 ) {
     Column {
         Text(
@@ -114,7 +136,17 @@ fun Top10Row(
             color = Palette.TextPrimary,
             modifier = Modifier.padding(start = LocalSidePad.current, bottom = 2.dp),
         )
+        val at = if (restoreId == null) -1 else tiles.take(10).indexOfFirst { it.id == restoreId }
+        val restoreFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+        val rowState = androidx.compose.foundation.lazy.rememberLazyListState(initialFirstVisibleItemIndex = maxOf(0, at - 1))
+        if (at >= 0) {
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                kotlinx.coroutines.delay(250)
+                runCatching { restoreFocus.requestFocus() }
+            }
+        }
         LazyRow(
+            state = rowState,
             contentPadding = PaddingValues(horizontal = LocalSidePad.current, vertical = 14.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -140,8 +172,9 @@ fun Top10Row(
                         FocusTile(
                             onClick = tile.onClick,
                             onLongClick = tile.onLongClick,
-                            onFocus = { tile.onFocus?.invoke() },
-                            modifier = Modifier.fillMaxSize(),
+                            onFocus = { tile.onFocus?.invoke(); onTileFocused(tile.id) },
+                            modifier = Modifier.fillMaxSize()
+                                .then(if (i == at) Modifier.focusRequester(restoreFocus) else Modifier),
                             corner = 6.dp,
                             focusedScale = 1.1f,
                         ) {
@@ -155,7 +188,13 @@ fun Top10Row(
 }
 
 @Composable
-fun PosterTile(tile: HomeTile, tileWidth: Dp, tileHeight: Dp, dimWhenOthersFocused: Boolean = false) {
+fun PosterTile(
+    tile: HomeTile,
+    tileWidth: Dp,
+    tileHeight: Dp,
+    dimWhenOthersFocused: Boolean = false,
+    focusRequester: androidx.compose.ui.focus.FocusRequester? = null,
+) {
     var tileFocused by remember { mutableStateOf(false) }
     Column(
         Modifier
@@ -167,7 +206,8 @@ fun PosterTile(tile: HomeTile, tileWidth: Dp, tileHeight: Dp, dimWhenOthersFocus
             onClick = tile.onClick,
             onLongClick = tile.onLongClick,
             onFocus = { tile.onFocus?.invoke() },
-            modifier = Modifier.fillMaxWidth().height(tileHeight),
+            modifier = Modifier.fillMaxWidth().height(tileHeight)
+                .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier),
             corner = 6.dp,
             focusedScale = 1.12f,
         ) {

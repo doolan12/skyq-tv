@@ -79,9 +79,25 @@ private data class PlayRequest(
 /** A title that has been opened, and whether Play was pressed to open it. */
 private data class DetailRequest(val item: StremioItem, val autoPlay: Boolean, val episodeId: String? = null)
 
+/** A title the TV home screen asked us to resume, waiting for the app to be ready for it. */
+object DeepLinks {
+    val resume = androidx.compose.runtime.mutableStateOf<String?>(null)
+
+    fun read(intent: android.content.Intent?) {
+        val uri = intent?.data ?: return
+        if (uri.scheme == "reelhouse" && uri.host == "resume") resume.value = uri.getQueryParameter("key")
+    }
+}
+
 class MainActivity : ComponentActivity() {
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        DeepLinks.read(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        DeepLinks.read(intent)
         setContent {
             // Everything reads about 20 percent bigger, which suits a TV across the room.
             val baseDensity = LocalDensity.current
@@ -151,6 +167,10 @@ private fun ReelApp(context: Context) {
     var favourites by remember(profileId) { mutableStateOf(favStore.all()) }
 
     val continueEntries = remember(history) { history.filter { !it.finished && it.positionMs > 10_000 } }
+    // Keep the TV home screen's Continue Watching row up to date (only when the player isn't running).
+    LaunchedEffect(history, playRequest == null) {
+        if (playRequest == null) com.skyqlike.iptv.data.history.WatchNextPublisher.publish(context, continueEntries)
+    }
 
     // A short message at the bottom of the screen that clears itself.
     LaunchedEffect(note) {
@@ -236,6 +256,23 @@ private fun ReelApp(context: Context) {
         browseUi.tab = 0
         browseUi.genre = null
         browseUi.query = ""
+    }
+
+    // Resume something picked from the TV home screen's Continue Watching row.
+    val deepKey = DeepLinks.resume.value
+    LaunchedEffect(deepKey, current != null, stremio.hasAnything) {
+        val key = deepKey ?: return@LaunchedEffect
+        if (current == null || !stremio.hasAnything) return@LaunchedEffect
+        DeepLinks.resume.value = null
+        val parts = key.removePrefix("stremio:").substringBefore('|').split(':', limit = 2)
+        if (parts.size == 2) {
+            val entry = history.firstOrNull { it.key == key }
+            val item = StremioItem(id = parts[1], type = parts[0], name = entry?.title ?: "", poster = entry?.imageUrl)
+            val epId = key.substringAfter('|', "")
+            playRequest = null
+            showSettings = false
+            detail = if (parts[0] == "series" && epId.isNotEmpty()) DetailRequest(item, false, epId) else DetailRequest(item, true)
+        }
     }
 
     val actions = StremioActions(
