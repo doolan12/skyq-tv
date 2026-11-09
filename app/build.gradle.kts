@@ -13,8 +13,8 @@ android {
         applicationId = "com.skyqlike.iptv"
         minSdk = 22          // covers older Fire TV sticks and Android TV boxes
         targetSdk = 34
-        versionCode = 18
-        versionName = "1.7.0"
+        versionCode = 19
+        versionName = "1.7.1"
     }
 
     buildTypes {

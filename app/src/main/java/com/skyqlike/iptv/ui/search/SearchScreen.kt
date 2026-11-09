@@ -29,11 +29,15 @@ import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import com.skyqlike.iptv.data.model.Channel
 import com.skyqlike.iptv.data.model.Programme
+import com.skyqlike.iptv.data.vod.Episode
 import com.skyqlike.iptv.data.vod.Movie
+import com.skyqlike.iptv.data.vod.Series
 import com.skyqlike.iptv.data.vod.VodState
 import com.skyqlike.iptv.ui.common.Artwork
 import com.skyqlike.iptv.ui.home.FocusTile
 import com.skyqlike.iptv.ui.providers.LabeledField
+import com.skyqlike.iptv.ui.vod.MovieDetails
+import com.skyqlike.iptv.ui.vod.SeriesDetails
 import com.skyqlike.iptv.ui.theme.Palette
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -55,8 +59,13 @@ fun SearchScreen(
     onNeedCatalog: () -> Unit,
     onPlayChannel: (Channel) -> Unit,
     onPlayMovie: (Movie) -> Unit,
+    loadMovieInfo: suspend (Movie) -> Movie,
+    loadEpisodes: suspend (Series) -> Result<List<Episode>>,
+    onPlayEpisodes: (Series, List<Episode>, Int) -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
+    var openMovie by remember { mutableStateOf<Movie?>(null) }
+    var openSeries by remember { mutableStateOf<Series?>(null) }
     val q = query.trim()
     LaunchedEffect(q.length >= 2) { if (q.length >= 2) onNeedCatalog() }
 
@@ -86,8 +95,27 @@ fun SearchScreen(
         val ready = vod as? VodState.Ready
         if (q.length < 2 || ready == null) emptyList() else ready.catalog.movies
             .filter { it.name.contains(q, ignoreCase = true) }.take(MAX_PER_SECTION).map { m ->
-                Hit("m:${m.id}", m.name, listOf(m.year, m.category).filter { it.isNotBlank() }.joinToString("  |  "), m.posterUrl, false) { onPlayMovie(m) }
+                Hit("m:${m.id}", m.name, listOf(m.year, m.category).filter { it.isNotBlank() }.joinToString("  |  "), m.posterUrl, false) { openMovie = m }
             }
+    }
+
+    val seriesHits = remember(q, vod) {
+        val ready = vod as? VodState.Ready
+        if (q.length < 2 || ready == null) emptyList() else ready.catalog.series
+            .filter { it.name.contains(q, ignoreCase = true) }.take(MAX_PER_SECTION).map { s ->
+                Hit("s:${s.id}", s.name, listOf(s.year, s.category).filter { it.isNotBlank() }.joinToString("  |  "), s.coverUrl, false) { openSeries = s }
+            }
+    }
+
+    val pickedMovie = openMovie
+    val pickedSeries = openSeries
+    if (pickedMovie != null) {
+        MovieDetails(pickedMovie, loadMovieInfo, onPlayMovie) { openMovie = null }
+        return
+    }
+    if (pickedSeries != null) {
+        SeriesDetails(pickedSeries, loadEpisodes, onPlayEpisodes) { openSeries = null }
+        return
     }
 
     LazyColumn(
@@ -97,7 +125,7 @@ fun SearchScreen(
     ) {
         item {
             Text("Search", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary, modifier = Modifier.padding(bottom = 8.dp))
-            LabeledField("Channels, shows and movies", query) { query = it }
+            LabeledField("Channels, shows, movies and series", query) { query = it }
         }
         if (q.length < 2) {
             item { Note("Type at least two letters.") }
@@ -105,10 +133,11 @@ fun SearchScreen(
             section("Channels", channelHits)
             section("TV shows", showHits)
             section("Movies", movieHits)
-            if (movieHits.isEmpty() && vod !is VodState.Ready) {
+            section("TV series", seriesHits)
+            if (vod !is VodState.Ready) {
                 item { Note(if (vod is VodState.Error) "Movies couldn't be loaded." else "Loading movies...") }
             }
-            if (channelHits.isEmpty() && showHits.isEmpty() && movieHits.isEmpty() && vod is VodState.Ready) {
+            if (channelHits.isEmpty() && showHits.isEmpty() && movieHits.isEmpty() && seriesHits.isEmpty() && vod is VodState.Ready) {
                 item { Note("Nothing found for \"$q\".") }
             }
         }

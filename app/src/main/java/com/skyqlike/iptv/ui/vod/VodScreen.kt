@@ -202,7 +202,7 @@ private fun formatMinutes(min: Int): String = when {
 }
 
 @Composable
-private fun MovieDetails(
+internal fun MovieDetails(
     movie: Movie,
     loadInfo: suspend (Movie) -> Movie,
     onPlay: (Movie) -> Unit,
@@ -251,7 +251,7 @@ private fun MovieDetails(
 }
 
 @Composable
-private fun SeriesDetails(
+internal fun SeriesDetails(
     series: Series,
     loadEpisodes: suspend (Series) -> Result<List<Episode>>,
     onPlay: (Series, List<Episode>, Int) -> Unit,

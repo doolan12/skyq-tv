@@ -235,6 +235,22 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
+                val playEpisodesFromSearch: (com.skyqlike.iptv.data.vod.Series, List<com.skyqlike.iptv.data.vod.Episode>, Int) -> Unit = { series, episodes, start ->
+                    playRequest = PlayRequest(
+                        episodes.map { ep ->
+                            PlayItem(
+                                key = "ep:${series.id}:${ep.id}",
+                                title = series.name,
+                                subtitle = "S${ep.season} E${ep.number}  ${ep.title}",
+                                url = ep.streamUrl,
+                                kind = PlayKind.EPISODE,
+                                imageUrl = ep.imageUrl ?: series.coverUrl,
+                            )
+                        },
+                        start,
+                    )
+                }
+
                 // "Open on last channel": once the channel list is really loaded (not the sample), jump straight in.
                 var openedOnStart by remember { mutableStateOf(false) }
                 LaunchedEffect(channels) {
@@ -292,6 +308,9 @@ class MainActivity : ComponentActivity() {
                                 onNeedCatalog = loadCatalog,
                                 onPlayChannel = playChannel,
                                 onPlayMovie = playMovieFromSearch,
+                                loadMovieInfo = { vodRepo.movieInfo(activeProvider, it) },
+                                loadEpisodes = { vodRepo.episodes(activeProvider, it) },
+                                onPlayEpisodes = playEpisodesFromSearch,
                             )
                         },
                         moviesContent = {
