@@ -147,6 +147,10 @@ fun MenuIcon(name: String, tint: Color, size: Dp = 22.dp, modifier: Modifier = M
                     )
                 }
             }
+            "search" -> {
+                ring(0.44f, 0.44f, 0.26f)
+                seg(0.63f, 0.63f, 0.86f, 0.86f)
+            }
             "categories" -> {
                 seg(0.16f, 0.28f, 0.84f, 0.28f)
                 seg(0.16f, 0.50f, 0.84f, 0.50f)

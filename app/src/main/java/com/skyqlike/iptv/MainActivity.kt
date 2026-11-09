@@ -206,6 +206,48 @@ class MainActivity : ComponentActivity() {
                     if (i >= 0) playRequest = PlayRequest(shownChannels.map { it.toPlayItem() }, i)
                 }
 
+                // Loads the movies and series list the first time it is needed (Movies page or Search).
+                val loadCatalog: () -> Unit = {
+                    if (vod is VodState.Idle || vod is VodState.Error) {
+                        vod = VodState.Loading
+                        scope.launch {
+                            vod = vodRepo.catalog(activeProvider).fold(
+                                onSuccess = { VodState.Ready(it) },
+                                onFailure = { VodState.Error(it.message ?: "Couldn't load movies and series.") },
+                            )
+                        }
+                    }
+                }
+
+                val playMovieFromSearch: (com.skyqlike.iptv.data.vod.Movie) -> Unit = { m ->
+                    playRequest = PlayRequest(
+                        listOf(
+                            PlayItem(
+                                key = "movie:${m.id}",
+                                title = m.name,
+                                subtitle = m.year,
+                                url = m.streamUrl,
+                                kind = PlayKind.MOVIE,
+                                imageUrl = m.posterUrl,
+                            )
+                        ),
+                        0,
+                    )
+                }
+
+                // "Open on last channel": once the channel list is really loaded (not the sample), jump straight in.
+                var openedOnStart by remember { mutableStateOf(false) }
+                LaunchedEffect(channels) {
+                    if (!openedOnStart && channels !== sample) {
+                        openedOnStart = true
+                        if (settings.openOnLastChannel && playRequest == null) {
+                            val last = recentKeys.firstOrNull()
+                            val ch = shownChannels.firstOrNull { it.favKey == last }
+                            if (ch != null) playChannel(ch)
+                        }
+                    }
+                }
+
                 val playHistory: (HistoryEntry) -> Unit = { e ->
                     playRequest = PlayRequest(
                         listOf(PlayItem(e.key, e.title, e.subtitle, e.url, e.kind, imageUrl = e.imageUrl)),
@@ -242,20 +284,20 @@ class MainActivity : ComponentActivity() {
                                 previewEnabled = playRequest == null,
                             )
                         },
+                        searchContent = {
+                            com.skyqlike.iptv.ui.search.SearchScreen(
+                                channels = shownChannels,
+                                epg = epg,
+                                vod = vod,
+                                onNeedCatalog = loadCatalog,
+                                onPlayChannel = playChannel,
+                                onPlayMovie = playMovieFromSearch,
+                            )
+                        },
                         moviesContent = {
                             VodScreen(
                                 state = vod,
-                                onNeedCatalog = {
-                                    if (vod is VodState.Idle || vod is VodState.Error) {
-                                        vod = VodState.Loading
-                                        scope.launch {
-                                            vod = vodRepo.catalog(activeProvider).fold(
-                                                onSuccess = { VodState.Ready(it) },
-                                                onFailure = { VodState.Error(it.message ?: "Couldn't load movies and series.") },
-                                            )
-                                        }
-                                    }
-                                },
+                                onNeedCatalog = loadCatalog,
                                 loadMovieInfo = { vodRepo.movieInfo(activeProvider, it) },
                                 loadEpisodes = { vodRepo.episodes(activeProvider, it) },
                                 onPlayMovie = { m ->

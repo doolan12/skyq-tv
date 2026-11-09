@@ -13,6 +13,8 @@ data class AppSettings(
     val autoReconnect: Boolean = true,
     /** Download a fresh TV guide in the background every few hours. */
     val autoGuideUpdate: Boolean = true,
+    /** Start playing the channel you watched last as soon as the app opens. */
+    val openOnLastChannel: Boolean = false,
     val resume: Boolean = true,
     val subtitlesOn: Boolean = false,
     /** Two-letter language code like "en", or empty for "whatever the stream starts with". */
@@ -40,6 +42,7 @@ class SettingsStore(context: Context) {
         aspect = prefs.getInt("aspect", 0),
         autoReconnect = prefs.getBoolean("autoReconnect", true),
         autoGuideUpdate = prefs.getBoolean("autoGuideUpdate", true),
+        openOnLastChannel = prefs.getBoolean("openOnLastChannel", false),
         resume = prefs.getBoolean("resume", true),
         subtitlesOn = prefs.getBoolean("subtitlesOn", false),
         audioLang = prefs.getString("audioLang", "") ?: "",
@@ -56,6 +59,7 @@ class SettingsStore(context: Context) {
             .putInt("aspect", s.aspect)
             .putBoolean("autoReconnect", s.autoReconnect)
             .putBoolean("autoGuideUpdate", s.autoGuideUpdate)
+            .putBoolean("openOnLastChannel", s.openOnLastChannel)
             .putBoolean("resume", s.resume)
             .putBoolean("subtitlesOn", s.subtitlesOn)
             .putString("audioLang", s.audioLang)

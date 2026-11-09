@@ -60,8 +60,8 @@ import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.delay
 
-private val TabNames = listOf("Home", "Guide", "Movies", "Library", "Settings")
-private val TabIcons = listOf("home", "guide", "movies", "library", "settings")
+private val TabNames = listOf("Home", "Guide", "Search", "Movies", "Library", "Settings")
+private val TabIcons = listOf("home", "guide", "search", "movies", "library", "settings")
 
 /**
  * The phone layout: one screen at a time with a menu along the bottom.
@@ -80,6 +80,7 @@ fun PhoneShell(
     moviesContent: @Composable () -> Unit,
     libraryContent: @Composable () -> Unit,
     settingsContent: @Composable () -> Unit,
+    searchContent: @Composable () -> Unit,
 ) {
     var tab by remember { mutableIntStateOf(0) }
     // Back goes to Home first, so it never throws you out of the app from the middle of a screen.
@@ -94,8 +95,9 @@ fun PhoneShell(
             when (tab) {
                 0 -> PhoneHome(channels, epg, onPlay, favouriteKeys, recentKeys, continueWatching, onPlayHistory, onToggleFavourite)
                 1 -> PhoneGuide(channels, epg, onPlay, favouriteKeys, recentKeys, onToggleFavourite)
-                2 -> moviesContent()
-                3 -> libraryContent()
+                2 -> searchContent()
+                3 -> moviesContent()
+                4 -> libraryContent()
                 else -> settingsContent()
             }
         }

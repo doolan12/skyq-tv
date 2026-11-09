@@ -173,6 +173,11 @@ private fun PlaybackPage(settings: AppSettings, onChange: (AppSettings) -> Unit)
                 }
             }
             item {
+                SettingRow("Open on last channel", onOff(settings.openOnLastChannel), "When the app starts, go straight to the live channel you watched last.") {
+                    onChange(settings.copy(openOnLastChannel = !settings.openOnLastChannel))
+                }
+            }
+            item {
                 SettingRow("Subtitles on by default", onOff(settings.subtitlesOn), "When a stream has subtitles, show them straight away.") {
                     onChange(settings.copy(subtitlesOn = !settings.subtitlesOn))
                 }

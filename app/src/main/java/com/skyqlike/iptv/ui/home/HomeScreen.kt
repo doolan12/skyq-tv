@@ -74,7 +74,7 @@ import com.skyqlike.iptv.ui.theme.Palette
 
 /** The menu down the left side, in the order from the brief. */
 val MenuItems = listOf(
-    "Home", "TV Guide", "All Channels", "Catch Up", "Movies", "Sports",
+    "Home", "TV Guide", "Search", "All Channels", "Catch Up", "Movies", "Sports",
     "Entertainment", "News", "Music", "Movie Channels", "Documentaries", "Kids",
     "UK", "Australia", "Ireland", "USA", "My Library", "Favourites", "Settings",
 )
@@ -141,6 +141,7 @@ fun HomeScreen(
     libraryContent: @Composable () -> Unit = {},
     catchUpContent: @Composable () -> Unit = {},
     epg: Map<String, List<Programme>> = emptyMap(),
+    searchContent: @Composable () -> Unit = {},
     phone: Boolean = false,
 ) {
     if (phone) {
@@ -156,6 +157,7 @@ fun HomeScreen(
             moviesContent = moviesContent,
             libraryContent = libraryContent,
             settingsContent = settingsContent,
+            searchContent = searchContent,
         )
         return
     }
@@ -230,6 +232,7 @@ fun HomeScreen(
                     )
                 }
                 "Settings" -> settingsContent()
+                "Search" -> searchContent()
                 "TV Guide" -> guideContent()
                 "Movies" -> moviesContent()
                 "My Library" -> libraryContent()
@@ -333,6 +336,7 @@ private fun menuEntries(categoriesOpen: Boolean): List<MenuEntry> = buildList {
     add(MenuHeader("LIVE TV"))
     add(MenuLink("Home", "home"))
     add(MenuLink("TV Guide", "guide"))
+    add(MenuLink("Search", "search"))
     add(MenuLink("All Channels", "all"))
     add(MenuLink("Catch Up", "catchup"))
     add(MenuHeader("ON DEMAND"))
