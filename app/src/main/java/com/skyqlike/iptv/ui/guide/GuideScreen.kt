@@ -353,7 +353,7 @@ private fun InfoPanel(
     }
 }
 
-private class GuideFilter(val label: String, val matches: (Channel) -> Boolean)
+internal class GuideFilter(val label: String, val matches: (Channel) -> Boolean)
 
 /** The usual TV categories, matched against each channel's group name from the provider. */
 private val QuickCategories = listOf(
@@ -369,7 +369,7 @@ private val QuickCategories = listOf(
 )
 
 /** Builds the filter buttons. Ones that would show no channels are left out. */
-private fun buildGuideFilters(
+internal fun buildGuideFilters(
     channels: List<Channel>,
     favouriteKeys: Set<String>,
     recentKeys: List<String>,
@@ -396,7 +396,7 @@ private fun buildGuideFilters(
 
 /** A scrolling row of filter buttons. Pick one to show only those channels in the guide. */
 @Composable
-private fun CategoryBar(labels: List<String>, selectedIndex: Int, onPick: (Int) -> Unit) {
+internal fun CategoryBar(labels: List<String>, selectedIndex: Int, onPick: (Int) -> Unit) {
     LazyRow(
         Modifier.fillMaxWidth().background(Palette.Rail),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),

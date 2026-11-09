@@ -43,6 +43,7 @@ import com.skyqlike.iptv.ui.settings.SettingsScreen
 import com.skyqlike.iptv.data.vod.VodRepository
 import com.skyqlike.iptv.data.vod.VodState
 import com.skyqlike.iptv.ui.catchup.CatchUpScreen
+import com.skyqlike.iptv.ui.common.isPhoneLike
 import com.skyqlike.iptv.ui.guide.GuideScreen
 import com.skyqlike.iptv.ui.home.HomeScreen
 import com.skyqlike.iptv.ui.library.LibraryScreen
@@ -62,12 +63,16 @@ class MainActivity : ComponentActivity() {
         listOf("stremio", "stremio_favourites").forEach {
             getSharedPreferences(it, MODE_PRIVATE).edit().clear().apply()
         }
+        val phone = isPhoneLike()
+        // Phones can be held either way up. TVs are always sideways.
+        requestedOrientation = if (phone) android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        else android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         setContent {
-            // Everything reads about 20 percent bigger, which suits a TV across the room.
+            // On a TV everything reads about 20 percent bigger, which suits sitting across the room.
             val baseDensity = androidx.compose.ui.platform.LocalDensity.current
             androidx.compose.runtime.CompositionLocalProvider(
                 androidx.compose.ui.platform.LocalDensity provides
-                    androidx.compose.ui.unit.Density(baseDensity.density, baseDensity.fontScale * 1.2f)
+                    androidx.compose.ui.unit.Density(baseDensity.density, baseDensity.fontScale * (if (phone) 1.0f else 1.2f))
             ) {
             SkyTheme {
                 val scope = rememberCoroutineScope()
@@ -210,6 +215,7 @@ class MainActivity : ComponentActivity() {
 
                 Box(Modifier.fillMaxSize()) {
                     HomeScreen(
+                        phone = phone,
                         epg = epg,
                         channels = shownChannels,
                         onPlay = playChannel,

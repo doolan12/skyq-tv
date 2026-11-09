@@ -15,6 +15,7 @@ import androidx.core.util.Consumer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -80,6 +81,7 @@ import com.skyqlike.iptv.data.model.PlayItem
 import com.skyqlike.iptv.data.model.PlayKind
 import com.skyqlike.iptv.data.model.Programme
 import com.skyqlike.iptv.ui.home.FocusTile
+import com.skyqlike.iptv.ui.common.isPhoneLike
 import com.skyqlike.iptv.ui.theme.Palette
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -295,6 +297,14 @@ fun PlayerScreen(
 
     // Picture-in-picture: a small floating window, where the device supports it.
     val activity = remember(context) { context.findActivity() }
+    // On a phone the picture is wide, so the player turns sideways while it is open, then lets go again.
+    DisposableEffect(activity) {
+        val phone = context.isPhoneLike()
+        if (phone) activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        onDispose {
+            if (phone) activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+    }
     val pipSupported = remember(context) {
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             context.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
@@ -557,6 +567,18 @@ fun PlayerScreen(
                         overlay = !overlay
                         overlayTick++
                     })
+                }
+                // On a phone: swipe up for the next channel, down for the one before.
+                .pointerInput(Unit) {
+                    var total = 0f
+                    detectVerticalDragGestures(
+                        onDragStart = { total = 0f },
+                        onDragEnd = {
+                            if (items[index].kind == PlayKind.LIVE && kotlin.math.abs(total) > 120f) {
+                                if (step(if (total < 0) 1 else -1)) bump()
+                            }
+                        },
+                    ) { _, amount -> total += amount }
                 }
         )
 

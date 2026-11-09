@@ -141,7 +141,24 @@ fun HomeScreen(
     libraryContent: @Composable () -> Unit = {},
     catchUpContent: @Composable () -> Unit = {},
     epg: Map<String, List<Programme>> = emptyMap(),
+    phone: Boolean = false,
 ) {
+    if (phone) {
+        com.skyqlike.iptv.ui.phone.PhoneShell(
+            channels = channels,
+            epg = epg,
+            onPlay = onPlay,
+            favouriteKeys = favouriteKeys,
+            recentKeys = recentKeys,
+            continueWatching = continueWatching,
+            onPlayHistory = onPlayHistory,
+            onToggleFavourite = onToggleFavourite,
+            moviesContent = moviesContent,
+            libraryContent = libraryContent,
+            settingsContent = settingsContent,
+        )
+        return
+    }
     var section by remember { mutableStateOf("Home") }
     val firstFocus = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current

@@ -49,6 +49,7 @@ fun RailRow(
     rail: Rail,
     tileWidth: Dp = 250.dp,
     tileHeight: Dp = 140.dp,
+    edge: Dp = 36.dp,
 ) {
     Column {
         Text(
@@ -56,10 +57,10 @@ fun RailRow(
             fontSize = 22.sp,
             fontWeight = FontWeight.SemiBold,
             color = Palette.TextPrimary,
-            modifier = Modifier.padding(start = 36.dp, bottom = 10.dp),
+            modifier = Modifier.padding(start = edge, bottom = 10.dp),
         )
         LazyRow(
-            contentPadding = PaddingValues(horizontal = 36.dp),
+            contentPadding = PaddingValues(horizontal = edge),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             itemsIndexed(rail.tiles, key = { i, t -> "$i|${rail.title}|${t.id}" }) { _, tile ->
