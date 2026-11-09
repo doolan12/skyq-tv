@@ -81,6 +81,7 @@ fun PhoneShell(
     libraryContent: @Composable () -> Unit,
     settingsContent: @Composable () -> Unit,
     searchContent: @Composable () -> Unit,
+    extraRails: List<com.skyqlike.iptv.ui.common.Rail> = emptyList(),
 ) {
     var tab by remember { mutableIntStateOf(0) }
     // Back goes to Home first, so it never throws you out of the app from the middle of a screen.
@@ -93,7 +94,7 @@ fun PhoneShell(
     ) {
         Box(Modifier.weight(1f).fillMaxWidth().statusBarsPadding()) {
             when (tab) {
-                0 -> PhoneHome(channels, epg, onPlay, favouriteKeys, recentKeys, continueWatching, onPlayHistory, onToggleFavourite)
+                0 -> PhoneHome(channels, epg, onPlay, favouriteKeys, recentKeys, continueWatching, onPlayHistory, onToggleFavourite, extraRails)
                 1 -> PhoneGuide(channels, epg, onPlay, favouriteKeys, recentKeys, onToggleFavourite)
                 2 -> searchContent()
                 3 -> moviesContent()
@@ -141,6 +142,7 @@ private fun PhoneHome(
     continueWatching: List<HistoryEntry>,
     onPlayHistory: (HistoryEntry) -> Unit,
     onToggleFavourite: (Channel) -> Unit,
+    extraRails: List<com.skyqlike.iptv.ui.common.Rail>,
 ) {
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -150,8 +152,8 @@ private fun PhoneHome(
         }
     }
     val nowFor: (Channel) -> Programme? = remember(epg, nowMs) { { ch: Channel -> epg.nowOn(ch, nowMs) } }
-    val rails = remember(channels, favouriteKeys, recentKeys, continueWatching, nowFor) {
-        buildRails(channels, favouriteKeys, recentKeys, continueWatching, onPlay, onPlayHistory, onToggleFavourite, nowFor)
+    val rails = remember(channels, favouriteKeys, recentKeys, continueWatching, nowFor, extraRails) {
+        buildRails(channels, favouriteKeys, recentKeys, continueWatching, onPlay, onPlayHistory, onToggleFavourite, nowFor) + extraRails
     }
     val featured = remember(channels, favouriteKeys, nowFor) {
         channels.firstOrNull { it.favKey in favouriteKeys && nowFor(it) != null }

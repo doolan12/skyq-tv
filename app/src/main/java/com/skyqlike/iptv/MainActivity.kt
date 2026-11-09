@@ -104,6 +104,8 @@ class MainActivity : ComponentActivity() {
                 var reloadTick by remember { mutableIntStateOf(0) }
                 var forceNext by remember { mutableStateOf(false) }
                 var playRequest by remember { mutableStateOf<PlayRequest?>(null) }
+                var homeMovie by remember { mutableStateOf<com.skyqlike.iptv.data.vod.Movie?>(null) }
+                var homeSeries by remember { mutableStateOf<com.skyqlike.iptv.data.vod.Series?>(null) }
                 var note by remember { mutableStateOf<String?>(null) }
                 var settings by remember { mutableStateOf(settingsStore.load()) }
                 var adultUnlocked by remember { mutableStateOf(false) } // forgotten each time the app starts
@@ -251,6 +253,33 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
+                // Quietly loads the movie list a few seconds after the channels, so Home can show what's new.
+                LaunchedEffect(channels) {
+                    if (channels !== sample && activeProvider != null) {
+                        delay(4000)
+                        loadCatalog()
+                    }
+                }
+
+                // "New movies" and "New TV series" rows for Home (only once the list has loaded).
+                val vodRows = remember(vod) {
+                    val ready = vod as? VodState.Ready
+                    if (ready == null) emptyList() else listOf(
+                        com.skyqlike.iptv.ui.common.Rail(
+                            "New Movies",
+                            ready.catalog.movies.sortedByDescending { it.addedEpoch }.take(20).map { m ->
+                                com.skyqlike.iptv.ui.common.HomeTile(m.id, m.name, m.year.ifBlank { m.category }, m.posterUrl) { homeMovie = m }
+                            },
+                        ),
+                        com.skyqlike.iptv.ui.common.Rail(
+                            "New TV Series",
+                            ready.catalog.series.sortedByDescending { it.addedEpoch }.take(20).map { s ->
+                                com.skyqlike.iptv.ui.common.HomeTile(s.id, s.name, s.year.ifBlank { s.category }, s.coverUrl) { homeSeries = s }
+                            },
+                        ),
+                    ).filter { it.tiles.isNotEmpty() }
+                }
+
                 // "Open on last channel": once the channel list is really loaded (not the sample), jump straight in.
                 var openedOnStart by remember { mutableStateOf(false) }
                 LaunchedEffect(channels) {
@@ -274,6 +303,7 @@ class MainActivity : ComponentActivity() {
                 Box(Modifier.fillMaxSize()) {
                     HomeScreen(
                         phone = phone,
+                        extraRails = vodRows,
                         epg = epg,
                         channels = shownChannels,
                         onPlay = playChannel,
@@ -483,6 +513,27 @@ class MainActivity : ComponentActivity() {
                                 .background(Color(0xE6101014), RoundedCornerShape(24.dp))
                                 .padding(horizontal = 22.dp, vertical = 12.dp),
                         )
+                    }
+
+                    // A movie or series opened from a Home row. Back returns to Home.
+                    val pickedMovie = homeMovie
+                    val pickedSeries = homeSeries
+                    if (pickedMovie != null || pickedSeries != null) {
+                        Box(Modifier.fillMaxSize().background(Color(0xFF0B0B0D))) {
+                            if (pickedMovie != null) {
+                                com.skyqlike.iptv.ui.vod.MovieDetails(
+                                    pickedMovie,
+                                    { vodRepo.movieInfo(activeProvider, it) },
+                                    playMovieFromSearch,
+                                ) { homeMovie = null }
+                            } else if (pickedSeries != null) {
+                                com.skyqlike.iptv.ui.vod.SeriesDetails(
+                                    pickedSeries,
+                                    { vodRepo.episodes(activeProvider, it) },
+                                    playEpisodesFromSearch,
+                                ) { homeSeries = null }
+                            }
+                        }
                     }
 
                     // The player sits on top of everything. Back returns to the screen you came from.

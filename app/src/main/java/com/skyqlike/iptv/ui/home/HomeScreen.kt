@@ -142,6 +142,8 @@ fun HomeScreen(
     catchUpContent: @Composable () -> Unit = {},
     epg: Map<String, List<Programme>> = emptyMap(),
     searchContent: @Composable () -> Unit = {},
+    /** Extra rows added under the channel rows (new movies and series). */
+    extraRails: List<Rail> = emptyList(),
     phone: Boolean = false,
 ) {
     if (phone) {
@@ -158,6 +160,7 @@ fun HomeScreen(
             libraryContent = libraryContent,
             settingsContent = settingsContent,
             searchContent = searchContent,
+            extraRails = extraRails,
         )
         return
     }
@@ -217,8 +220,8 @@ fun HomeScreen(
         Box(Modifier.fillMaxSize().padding(start = railWidth)) {
             when (section) {
                 "Home" -> {
-                    val rails = remember(channels, favouriteKeys, recentKeys, continueWatching, onToggleFavourite, nowFor) {
-                        buildRails(channels, favouriteKeys, recentKeys, continueWatching, onPlay, onPlayHistory, onToggleFavourite, nowFor)
+                    val rails = remember(channels, favouriteKeys, recentKeys, continueWatching, onToggleFavourite, nowFor, extraRails) {
+                        buildRails(channels, favouriteKeys, recentKeys, continueWatching, onPlay, onPlayHistory, onToggleFavourite, nowFor) + extraRails
                     }
                     val featured = remember(channels, favouriteKeys, nowFor) {
                         channels.firstOrNull { it.favKey in favouriteKeys && nowFor(it) != null }
