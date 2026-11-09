@@ -135,6 +135,7 @@ fun HomeScreen(
     catchUpContent: @Composable () -> Unit = {},
     epg: Map<String, List<Programme>> = emptyMap(),
     searchContent: @Composable () -> Unit = {},
+    multiViewContent: @Composable () -> Unit = {},
     /** Extra rows added under the channel rows (new movies and series). */
     extraRails: List<Rail> = emptyList(),
     phone: Boolean = false,
@@ -229,6 +230,7 @@ fun HomeScreen(
                 }
                 "Settings" -> settingsContent()
                 "Search" -> searchContent()
+                "Multi-view" -> multiViewContent()
                 "TV Guide" -> guideContent()
                 "Movies" -> moviesContent()
                 "My Library" -> libraryContent()
@@ -333,6 +335,7 @@ private fun menuEntries(categoriesOpen: Boolean): List<MenuEntry> = buildList {
     add(MenuLink("Home", "home"))
     add(MenuLink("TV Guide", "guide"))
     add(MenuLink("Search", "search"))
+    add(MenuLink("Multi-view", "all"))
     add(MenuLink("All Channels", "all"))
     add(MenuLink("Catch Up", "catchup"))
     add(MenuHeader("ON DEMAND"))

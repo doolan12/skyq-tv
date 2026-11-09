@@ -330,6 +330,14 @@ class MainActivity : ComponentActivity() {
                                 previewEnabled = playRequest == null,
                             )
                         },
+                        multiViewContent = {
+                            com.skyqlike.iptv.ui.multiview.MultiViewScreen(
+                                channels = shownChannels,
+                                epg = epg,
+                                favouriteKeys = favourites,
+                                recentKeys = recentKeys,
+                            )
+                        },
                         searchContent = {
                             com.skyqlike.iptv.ui.search.SearchScreen(
                                 channels = shownChannels,
