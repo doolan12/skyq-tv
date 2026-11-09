@@ -193,6 +193,11 @@ fun PlayerScreen(
     var inPip by remember { mutableStateOf(false) }
     var digits by remember { mutableStateOf("") } // channel number being typed on the remote
     var digitTick by remember { mutableIntStateOf(0) }
+    // The strip of nearby channels (mini guide): which channels it holds, which one is highlighted.
+    var miniOpen by remember { mutableStateOf(false) }
+    var miniEntries by remember { mutableStateOf<List<Int>>(emptyList()) }
+    var miniSel by remember { mutableIntStateOf(0) }
+    var miniTick by remember { mutableIntStateOf(0) }
 
     val attempts = remember { intArrayOf(0) }
     val token = remember { intArrayOf(0) }
@@ -413,7 +418,7 @@ fun PlayerScreen(
     }
 
     BackHandler {
-        if (picker != null) picker = null else onClose()
+        if (miniOpen) miniOpen = false else if (picker != null) picker = null else onClose()
     }
 
     val item = items[index]
@@ -481,6 +486,33 @@ fun PlayerScreen(
         }
     }
 
+    fun openMini() {
+        val n = minOf(items.size, 9)
+        val first = if (items.size >= 9) -2 else 0
+        miniEntries = (0 until n).map { (index + first + it).mod(items.size) }
+        miniSel = -first
+        overlay = false
+        miniOpen = true
+        miniTick++
+    }
+
+    fun pickMini(i: Int) {
+        val target = miniEntries.getOrNull(i)
+        miniOpen = false
+        if (target != null && target != index) {
+            previousIndex = index
+            index = target
+        }
+    }
+
+    // The strip tidies itself away after a few seconds.
+    LaunchedEffect(miniOpen, miniTick) {
+        if (miniOpen) {
+            delay(7_000)
+            miniOpen = false
+        }
+    }
+
     LaunchedEffect(digitTick) {
         if (digits.isNotEmpty()) {
             delay(1800)
@@ -512,6 +544,16 @@ fun PlayerScreen(
             commitDigits()
             return@handle true
         }
+        if (miniOpen) {
+            miniTick++
+            return@handle when (ev.key) {
+                Key.DirectionLeft -> { miniSel = (miniSel - 1).coerceAtLeast(0); true }
+                Key.DirectionRight -> { miniSel = (miniSel + 1).coerceAtMost(miniEntries.lastIndex); true }
+                Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> { pickMini(miniSel); true }
+                Key.DirectionUp, Key.DirectionDown, Key.ChannelUp, Key.ChannelDown -> { miniOpen = false; true }
+                else -> false
+            }
+        }
         bump()
         when (ev.key) {
             Key.MediaPlayPause -> { togglePlay(); return@handle true }
@@ -528,7 +570,7 @@ fun PlayerScreen(
                 Key.DirectionUp -> if (isLive) step(1) else false
                 Key.DirectionDown -> if (isLive) step(-1) else false
                 Key.DirectionLeft -> seekBy(-10_000)
-                Key.DirectionRight -> seekBy(10_000)
+                Key.DirectionRight -> if (isLive && items.size > 1) { openMini(); true } else seekBy(10_000)
                 Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> { overlay = true; true }
                 else -> false
             }
@@ -581,6 +623,19 @@ fun PlayerScreen(
                     ) { _, amount -> total += amount }
                 }
         )
+
+        // The mini guide: nearby channels along the bottom, with what is on now and next.
+        if (miniOpen && miniEntries.isNotEmpty()) {
+            MiniGuide(
+                entries = miniEntries.map { items[it] },
+                selected = miniSel,
+                currentKey = item.key,
+                epg = epg,
+                nowMs = nowMs,
+                onPick = { pickMini(it) },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
 
         // The channel number being typed, top right.
         if (digits.isNotEmpty()) {
@@ -713,6 +768,7 @@ fun PlayerScreen(
                         PlayerButton("+10s", Modifier.width(80.dp)) { bump(); seekBy(10_000) }
                     }
                     if (isLive && items.size > 1) {
+                        PlayerButton("Guide", Modifier.width(100.dp)) { openMini() }
                         PlayerButton("Prev ch", Modifier.width(110.dp)) { step(-1) }
                         PlayerButton("Next ch", Modifier.width(110.dp)) { step(1) }
                         if (previousIndex >= 0 && previousIndex != index) {
