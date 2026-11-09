@@ -72,13 +72,6 @@ import com.skyqlike.iptv.ui.common.Rail
 import com.skyqlike.iptv.ui.common.RailRow
 import com.skyqlike.iptv.ui.theme.Palette
 
-/** The menu down the left side, in the order from the brief. */
-val MenuItems = listOf(
-    "Home", "TV Guide", "Search", "All Channels", "Catch Up", "Movies", "Sports",
-    "Entertainment", "News", "Music", "Movie Channels", "Documentaries", "Kids",
-    "UK", "Australia", "Ireland", "USA", "My Library", "Favourites", "Settings",
-)
-
 /**
  * Lets a screen ask for the whole display. While a screen is "immersive" (a movie page, say)
  * the side menu disappears completely so the picture can go edge to edge.

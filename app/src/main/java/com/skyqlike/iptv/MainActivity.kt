@@ -221,7 +221,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                val playMovieFromSearch: (com.skyqlike.iptv.data.vod.Movie) -> Unit = { m ->
+                val playMovie: (com.skyqlike.iptv.data.vod.Movie) -> Unit = { m ->
                     playRequest = PlayRequest(
                         listOf(
                             PlayItem(
@@ -237,7 +237,7 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
-                val playEpisodesFromSearch: (com.skyqlike.iptv.data.vod.Series, List<com.skyqlike.iptv.data.vod.Episode>, Int) -> Unit = { series, episodes, start ->
+                val playEpisodes: (com.skyqlike.iptv.data.vod.Series, List<com.skyqlike.iptv.data.vod.Episode>, Int) -> Unit = { series, episodes, start ->
                     playRequest = PlayRequest(
                         episodes.map { ep ->
                             PlayItem(
@@ -337,10 +337,10 @@ class MainActivity : ComponentActivity() {
                                 vod = vod,
                                 onNeedCatalog = loadCatalog,
                                 onPlayChannel = playChannel,
-                                onPlayMovie = playMovieFromSearch,
+                                onPlayMovie = playMovie,
                                 loadMovieInfo = { vodRepo.movieInfo(activeProvider, it) },
                                 loadEpisodes = { vodRepo.episodes(activeProvider, it) },
-                                onPlayEpisodes = playEpisodesFromSearch,
+                                onPlayEpisodes = playEpisodes,
                             )
                         },
                         moviesContent = {
@@ -349,36 +349,8 @@ class MainActivity : ComponentActivity() {
                                 onNeedCatalog = loadCatalog,
                                 loadMovieInfo = { vodRepo.movieInfo(activeProvider, it) },
                                 loadEpisodes = { vodRepo.episodes(activeProvider, it) },
-                                onPlayMovie = { m ->
-                                    playRequest = PlayRequest(
-                                        listOf(
-                                            PlayItem(
-                                                key = "movie:${m.id}",
-                                                title = m.name,
-                                                subtitle = m.year,
-                                                url = m.streamUrl,
-                                                kind = PlayKind.MOVIE,
-                                                imageUrl = m.posterUrl,
-                                            )
-                                        ),
-                                        0,
-                                    )
-                                },
-                                onPlayEpisodes = { series, episodes, start ->
-                                    playRequest = PlayRequest(
-                                        episodes.map { ep ->
-                                            PlayItem(
-                                                key = "ep:${series.id}:${ep.id}",
-                                                title = series.name,
-                                                subtitle = "S${ep.season} E${ep.number}  ${ep.title}",
-                                                url = ep.streamUrl,
-                                                kind = PlayKind.EPISODE,
-                                                imageUrl = ep.imageUrl ?: series.coverUrl,
-                                            )
-                                        },
-                                        start,
-                                    )
-                                },
+                                onPlayMovie = playMovie,
+                                onPlayEpisodes = playEpisodes,
                             )
                         },
                         catchUpContent = {
@@ -524,13 +496,13 @@ class MainActivity : ComponentActivity() {
                                 com.skyqlike.iptv.ui.vod.MovieDetails(
                                     pickedMovie,
                                     { vodRepo.movieInfo(activeProvider, it) },
-                                    playMovieFromSearch,
+                                    playMovie,
                                 ) { homeMovie = null }
                             } else if (pickedSeries != null) {
                                 com.skyqlike.iptv.ui.vod.SeriesDetails(
                                     pickedSeries,
                                     { vodRepo.episodes(activeProvider, it) },
-                                    playEpisodesFromSearch,
+                                    playEpisodes,
                                 ) { homeSeries = null }
                             }
                         }
