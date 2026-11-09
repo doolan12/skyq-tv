@@ -481,6 +481,26 @@ fun PlayerScreen(
         if (exo.playWhenReady) exo.pause() else exo.play()
     }
 
+    // Touch controls: double-tap to skip, swipe for brightness and volume, plus speed and pop-out.
+    val activity = remember(context) {
+        var c = context
+        while (c is android.content.ContextWrapper && c !is android.app.Activity) c = c.baseContext
+        c as? android.app.Activity
+    }
+    val audio = remember(context) { context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager }
+    var hud by remember { mutableStateOf<String?>(null) }
+    var hudTick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(hudTick) {
+        if (hudTick > 0) {
+            delay(900)
+            hud = null
+        }
+    }
+    fun showHud(text: String) {
+        hud = text
+        hudTick++
+    }
+
     // Subtitles out of step? Shift them earlier or later and reload at the same spot.
     fun nudgeSubs(deltaMs: Long) {
         val cur = playlist[index]
@@ -530,25 +550,6 @@ fun PlayerScreen(
         }
     }
 
-    // Touch controls: double-tap to skip, swipe for brightness and volume, plus speed and pop-out.
-    val activity = remember(context) {
-        var c = context
-        while (c is android.content.ContextWrapper && c !is android.app.Activity) c = c.baseContext
-        c as? android.app.Activity
-    }
-    val audio = remember(context) { context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager }
-    var hud by remember { mutableStateOf<String?>(null) }
-    var hudTick by remember { mutableIntStateOf(0) }
-    LaunchedEffect(hudTick) {
-        if (hudTick > 0) {
-            delay(900)
-            hud = null
-        }
-    }
-    fun showHud(text: String) {
-        hud = text
-        hudTick++
-    }
     val brightness = remember { floatArrayOf(-1f) }
     val volumeFrac = remember { floatArrayOf(0f) }
     var speedIndex by remember { mutableIntStateOf(1) }
