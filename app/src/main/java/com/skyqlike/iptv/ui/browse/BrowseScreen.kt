@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableFloatStateOf
@@ -896,39 +897,50 @@ private fun NavItem(label: String, selected: Boolean, width: Dp, fontSize: TextU
 /** A short strip of facts about the selected title: name, year and rating, genres, and a couple of lines of story. */
 @Composable
 private fun InfoStrip(item: StremioItem, compact: Boolean, onOpen: (() -> Unit)? = null) {
+    // On a phone the strip is big: it takes over a third of the screen so the whole story can be read,
+    // leaving room for just one row of posters underneath.
+    val cfg = LocalConfiguration.current
+    val h = if (compact) (cfg.screenHeightDp * (if (cfg.screenHeightDp > cfg.screenWidthDp) 0.36f else 0.42f)).dp else 112.dp
     Column(
         Modifier
             .fillMaxWidth()
+            .height(h)
             .then(if (onOpen != null) Modifier.clickable { onOpen() } else Modifier)
-            .then(if (compact) Modifier.heightIn(min = 76.dp) else Modifier.height(112.dp))
             .padding(horizontal = LocalSidePad.current, vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+        verticalArrangement = Arrangement.spacedBy(if (compact) 5.dp else 2.dp),
     ) {
         Text(
             item.name,
-            fontSize = if (compact) 18.sp else 26.sp,
+            fontSize = if (compact) 24.sp else 26.sp,
             fontWeight = FontWeight.ExtraBold,
             color = Color.White,
-            maxLines = 1,
+            maxLines = if (compact) 2 else 1,
             overflow = TextOverflow.Ellipsis,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (!compact) Text(if (item.type == "series") "SERIES" else "FILM", fontSize = 12.sp, color = Palette.Accent, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-            MetaLine(item.year, "", item.rating, fontSize = 12.sp)
-            if (compact) Text(if (item.type == "series") "Series" else "Film", fontSize = 12.sp, color = Palette.Accent, fontWeight = FontWeight.Bold)
-            if (onOpen != null) Text("Open ›", fontSize = 12.sp, color = Color.White, fontWeight = FontWeight.Bold)
+            Text(if (item.type == "series") "SERIES" else "FILM", fontSize = 12.sp, color = Palette.Accent, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            MetaLine(item.year, if (compact) item.runtime else "", item.rating, fontSize = if (compact) 14.sp else 13.sp)
+            if (onOpen != null) Text("Open ›", fontSize = 14.sp, color = Color.White, fontWeight = FontWeight.Bold)
             if (!compact && item.genres.isNotEmpty()) {
                 Text(item.genres.take(3).joinToString("  •  "), fontSize = 13.sp, color = Color(0xFFD0D0D8), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
+        if (compact && item.genres.isNotEmpty()) {
+            Text(item.genres.take(4).joinToString("  •  "), fontSize = 14.sp, color = Color(0xFFD0D0D8), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
         if (item.description.isNotBlank()) {
-            Text(
-                item.description,
-                fontSize = if (compact) 12.sp else 13.sp,
-                color = Color(0xFFC0C0C8),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            if (compact) {
+                // The whole story; if it's very long, it scrolls inside the strip.
+                Text(
+                    item.description,
+                    fontSize = 15.sp,
+                    lineHeight = 21.sp,
+                    color = Color(0xFFD4D4DC),
+                    modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+                )
+            } else {
+                Text(item.description, fontSize = 13.sp, color = Color(0xFFC0C0C8), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
         }
     }
 }
