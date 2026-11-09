@@ -808,16 +808,17 @@ fun PlayerScreen(
                     Modifier.horizontalScroll(rememberScrollState()).padding(top = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    PlayerButton(
-                        if (wantPlay) "Pause" else "Play",
-                        Modifier.width(110.dp).focusRequester(firstButtonFocus),
+                    PlayerIconButton(
+                        if (wantPlay) Glyph.Pause else Glyph.Play,
+                        null,
+                        Modifier.width(72.dp).focusRequester(firstButtonFocus),
                         accent = true,
                     ) { bump(); togglePlay() }
                     if (seekable) {
-                        PlayerButton("-1m", Modifier.width(80.dp)) { bump(); seekBy(-60_000) }
-                        PlayerButton("-10s", Modifier.width(80.dp)) { bump(); seekBy(-10_000) }
-                        PlayerButton("+10s", Modifier.width(80.dp)) { bump(); seekBy(10_000) }
-                        PlayerButton("+1m", Modifier.width(80.dp)) { bump(); seekBy(60_000) }
+                        PlayerIconButton(Glyph.Back, "1m", Modifier.width(92.dp)) { bump(); seekBy(-60_000) }
+                        PlayerIconButton(Glyph.Back, "10", Modifier.width(92.dp)) { bump(); seekBy(-10_000) }
+                        PlayerIconButton(Glyph.Forward, "10", Modifier.width(92.dp)) { bump(); seekBy(10_000) }
+                        PlayerIconButton(Glyph.Forward, "1m", Modifier.width(92.dp)) { bump(); seekBy(60_000) }
                     }
                     PlayerButton("Audio", Modifier.width(100.dp)) { picker = C.TRACK_TYPE_AUDIO }
                     PlayerButton("Subtitles", Modifier.width(120.dp)) { picker = C.TRACK_TYPE_TEXT }
@@ -933,6 +934,65 @@ private fun PlayerButton(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.align(Alignment.Center).padding(horizontal = 10.dp),
         )
+    }
+}
+
+private enum class Glyph { Play, Pause, Back, Forward }
+
+/** A round control drawn as a picture (play, pause, wind back, wind forward), with an optional number of seconds or minutes. */
+@Composable
+private fun PlayerIconButton(
+    glyph: Glyph,
+    label: String?,
+    modifier: Modifier = Modifier,
+    accent: Boolean = false,
+    onClick: () -> Unit,
+) {
+    FocusTile(
+        onClick = onClick,
+        modifier = modifier.height(42.dp),
+        corner = 21.dp,
+        focusedScale = 1.06f,
+        backgroundColor = if (accent) Palette.Accent else Color(0x33FFFFFF),
+    ) {
+        Row(
+            Modifier.align(Alignment.Center),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            if (glyph == Glyph.Forward && label != null) Text(label, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Canvas(Modifier.size(if (glyph == Glyph.Back || glyph == Glyph.Forward) 20.dp else 22.dp)) {
+                val w = size.width
+                val h = size.height
+                val c = Color.White
+                fun tri(x0: Float, x1: Float) {
+                    // x0 is the flat edge, x1 the point.
+                    val path = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(x0, h * 0.1f)
+                        lineTo(x1, h * 0.5f)
+                        lineTo(x0, h * 0.9f)
+                        close()
+                    }
+                    drawPath(path, c)
+                }
+                when (glyph) {
+                    Glyph.Play -> tri(w * 0.2f, w * 0.95f)
+                    Glyph.Pause -> {
+                        drawRect(c, androidx.compose.ui.geometry.Offset(w * 0.15f, h * 0.1f), androidx.compose.ui.geometry.Size(w * 0.25f, h * 0.8f))
+                        drawRect(c, androidx.compose.ui.geometry.Offset(w * 0.6f, h * 0.1f), androidx.compose.ui.geometry.Size(w * 0.25f, h * 0.8f))
+                    }
+                    Glyph.Forward -> {
+                        tri(0f, w * 0.5f)
+                        tri(w * 0.5f, w)
+                    }
+                    Glyph.Back -> {
+                        tri(w * 0.5f, 0f)
+                        tri(w, w * 0.5f)
+                    }
+                }
+            }
+            if (glyph == Glyph.Back && label != null) Text(label, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        }
     }
 }
 
