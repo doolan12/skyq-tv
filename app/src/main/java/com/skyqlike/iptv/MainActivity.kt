@@ -80,6 +80,7 @@ class MainActivity : ComponentActivity() {
                 val repo = remember { PlaylistRepository(this@MainActivity) }
                 val epgRepo = remember { EpgRepository(this@MainActivity) }
                 val vodRepo = remember { VodRepository() }
+                val scoresRepo = remember { com.skyqlike.iptv.data.scores.ScoresRepository() }
                 val catchUpRepo = remember { CatchUpRepository() }
                 val favStore = remember { FavouritesStore(this@MainActivity) }
                 val settingsStore = remember { SettingsStore(this@MainActivity) }
@@ -335,6 +336,7 @@ class MainActivity : ComponentActivity() {
                                 channels = shownChannels,
                                 epg = epg,
                                 favouriteKeys = favourites,
+                                scoresRepo = scoresRepo,
                                 onPlay = playChannel,
                             )
                         },

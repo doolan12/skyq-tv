@@ -10,12 +10,12 @@ import java.net.UnknownHostException
 /** One simple way to fetch a web address as text, plus plain-English error messages. */
 internal object Http {
 
-    fun get(address: String, readTimeoutMs: Int = 60_000): String {
+    fun get(address: String, readTimeoutMs: Int = 60_000, userAgent: String? = null): String {
         val conn = URL(address).openConnection() as HttpURLConnection
         conn.connectTimeout = 15_000
         conn.readTimeout = readTimeoutMs
         conn.instanceFollowRedirects = true
-        conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) SkyQLikeIPTV/0.1")
+        conn.setRequestProperty("User-Agent", userAgent ?: "Mozilla/5.0 (Linux; Android) SkyQLikeIPTV/0.1")
         try {
             val code = conn.responseCode
             if (code !in 200..299) throw IOException("HTTP $code")
