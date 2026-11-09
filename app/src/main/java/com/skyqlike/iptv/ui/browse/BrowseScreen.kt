@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -729,7 +730,14 @@ fun BrowseScreen(
                     }
                 }
             }
-            CompositionLocalProvider(LocalSidePad provides (if (phone) 16.dp else 48.dp)) {
+            val dens = androidx.compose.ui.platform.LocalDensity.current
+            CompositionLocalProvider(
+                LocalSidePad provides (if (phone) 16.dp else 48.dp),
+                // A phone set to a very large text size would push the tabs and the strip off the screen, so cap it a little.
+                androidx.compose.ui.platform.LocalDensity provides (
+                    if (phone) androidx.compose.ui.unit.Density(dens.density, minOf(dens.fontScale, 1.1f)) else dens
+                ),
+            ) {
                 Column(Modifier.fillMaxSize()) {
                     headerBox()
                     Box(Modifier.weight(1f).fillMaxWidth().then(if (phone) Modifier.nestedScroll(pullConnection) else Modifier)) {
@@ -825,9 +833,9 @@ private fun PhoneTopBar(profile: Profile, onSettings: () -> Unit, onSwitchProfil
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text("REELHOUSE", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = Palette.Accent, letterSpacing = 1.sp, maxLines = 1, softWrap = false, modifier = Modifier.weight(1f))
-        NavItem("Shuffle", false, 84.dp, 14.sp) { onShuffle() }
-        NavItem("Settings", false, 84.dp, 14.sp) { onSettings() }
+        Text("REELHOUSE", fontSize = 17.sp, fontWeight = FontWeight.ExtraBold, color = Palette.Accent, letterSpacing = 1.sp, maxLines = 1, softWrap = false, modifier = Modifier.weight(1f))
+        NavItem("Shuffle", false, 74.dp, 13.sp) { onShuffle() }
+        NavItem("Settings", false, 78.dp, 13.sp) { onSettings() }
         FocusTile(
             onClick = onSwitchProfile,
             modifier = Modifier.width(38.dp).height(38.dp),
@@ -892,32 +900,33 @@ private fun InfoStrip(item: StremioItem, compact: Boolean, onOpen: (() -> Unit)?
         Modifier
             .fillMaxWidth()
             .then(if (onOpen != null) Modifier.clickable { onOpen() } else Modifier)
-            .height(if (compact) 80.dp else 112.dp)
+            .then(if (compact) Modifier.heightIn(min = 76.dp) else Modifier.height(112.dp))
             .padding(horizontal = LocalSidePad.current, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Text(
             item.name,
-            fontSize = if (compact) 20.sp else 26.sp,
+            fontSize = if (compact) 18.sp else 26.sp,
             fontWeight = FontWeight.ExtraBold,
             color = Color.White,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(if (item.type == "series") "SERIES" else "FILM", fontSize = 12.sp, color = Palette.Accent, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-            MetaLine(item.year, "", item.rating, fontSize = 13.sp)
-            if (onOpen != null) Text("Open ›", fontSize = 13.sp, color = Color.White, fontWeight = FontWeight.Bold)
-            if (item.genres.isNotEmpty()) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (!compact) Text(if (item.type == "series") "SERIES" else "FILM", fontSize = 12.sp, color = Palette.Accent, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            MetaLine(item.year, "", item.rating, fontSize = 12.sp)
+            if (compact) Text(if (item.type == "series") "Series" else "Film", fontSize = 12.sp, color = Palette.Accent, fontWeight = FontWeight.Bold)
+            if (onOpen != null) Text("Open ›", fontSize = 12.sp, color = Color.White, fontWeight = FontWeight.Bold)
+            if (!compact && item.genres.isNotEmpty()) {
                 Text(item.genres.take(3).joinToString("  •  "), fontSize = 13.sp, color = Color(0xFFD0D0D8), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         if (item.description.isNotBlank()) {
             Text(
                 item.description,
-                fontSize = 13.sp,
+                fontSize = if (compact) 12.sp else 13.sp,
                 color = Color(0xFFC0C0C8),
-                maxLines = if (compact) 1 else 2,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
         }
