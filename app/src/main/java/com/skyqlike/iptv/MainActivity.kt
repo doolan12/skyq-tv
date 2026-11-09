@@ -330,6 +330,14 @@ class MainActivity : ComponentActivity() {
                                 previewEnabled = playRequest == null,
                             )
                         },
+                        matchCentreContent = {
+                            com.skyqlike.iptv.ui.sports.MatchCentreScreen(
+                                channels = shownChannels,
+                                epg = epg,
+                                favouriteKeys = favourites,
+                                onPlay = playChannel,
+                            )
+                        },
                         multiViewContent = {
                             com.skyqlike.iptv.ui.multiview.MultiViewScreen(
                                 channels = shownChannels,

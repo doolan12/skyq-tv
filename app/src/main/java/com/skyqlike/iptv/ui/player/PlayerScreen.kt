@@ -72,6 +72,7 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -209,8 +210,13 @@ fun PlayerScreen(
             .setAllowCrossProtocolRedirects(true)
             .setConnectTimeoutMs(15_000)
             .setReadTimeoutMs(15_000)
+        // Starts playing after about a second of picture instead of two and a half, so channel changes are quicker.
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(15_000, 50_000, 1_000, 3_000)
+            .build()
         ExoPlayer.Builder(context)
             .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(http))
+            .setLoadControl(loadControl)
             .build()
             .also { player ->
                 // Starting subtitle / audio choices from Settings.
@@ -593,6 +599,8 @@ fun PlayerScreen(
                     useController = false
                     player = exo
                     setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
+                    // Keep the last picture on screen while the next channel starts, instead of flashing black.
+                    setKeepContentOnPlayerReset(true)
                     keepScreenOn = true
                 }
             },
