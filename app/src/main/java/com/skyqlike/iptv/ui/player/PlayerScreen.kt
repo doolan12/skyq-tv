@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -76,11 +77,13 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Text
 import kotlin.math.roundToInt
@@ -110,6 +113,17 @@ private val ResizeModes = intArrayOf(
 )
 private val ResizeLabels = listOf("Fit", "Zoom", "Stretch")
 
+/** Subtitle looks: size as a fraction of the screen height, text colour, and whether there is a dark box behind it. */
+private data class SubStyle(val label: String, val size: Float, val color: Int, val boxed: Boolean)
+private val SubStyles = listOf(
+    SubStyle("Small", 0.045f, 0xFFFFFFFF.toInt(), false),
+    SubStyle("Medium", 0.06f, 0xFFFFFFFF.toInt(), false),
+    SubStyle("Large", 0.075f, 0xFFFFFFFF.toInt(), false),
+    SubStyle("Huge", 0.09f, 0xFFFFFFFF.toInt(), false),
+    SubStyle("Large yellow", 0.075f, 0xFFFFE23A.toInt(), false),
+    SubStyle("Large boxed", 0.075f, 0xFFFFFFFF.toInt(), true),
+)
+
 private data class TrackOption(val label: String, val group: Tracks.Group, val index: Int, val selected: Boolean)
 private data class PickerRow(val label: String, val selected: Boolean, val onPick: () -> Unit)
 
@@ -135,6 +149,9 @@ fun PlayerScreen(
     autoNext: Boolean = true,
     /** The web addresses of the other streams for this item (best first), used when one stops working. */
     alternatesFor: (PlayItem) -> List<String> = { emptyList() },
+    /** For a series: every episode, and a way to get one ready to play (its stream and subtitles). */
+    episodes: List<com.skyqlike.iptv.data.stremio.StremioVideo> = emptyList(),
+    resolveEpisode: (suspend (com.skyqlike.iptv.data.stremio.StremioVideo) -> PlayItem?)? = null,
 ) {
     val context = LocalContext.current
     val introRepo = remember { IntroRepository() }
@@ -156,6 +173,10 @@ fun PlayerScreen(
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
     var endedTick by remember { mutableIntStateOf(0) }
+    var showEpisodes by remember { mutableStateOf(false) }
+    var subOffsetMs by remember { mutableLongStateOf(0L) }
+    val uiPrefs = remember { context.getSharedPreferences("player_ui", android.content.Context.MODE_PRIVATE) }
+    var subStyleIndex by remember { mutableIntStateOf(uiPrefs.getInt("substyle", 1).coerceIn(0, SubStyles.lastIndex)) }
 
     val attempts = remember { intArrayOf(0) }
     val token = remember { intArrayOf(0) }
@@ -176,7 +197,7 @@ fun PlayerScreen(
             .build()
         ExoPlayer.Builder(context)
             .setLoadControl(loadControl)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(http))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(DefaultDataSource.Factory(context, http)))
             .build()
             .also { player ->
                 // Starting subtitle / audio choices from Settings.
@@ -195,7 +216,7 @@ fun PlayerScreen(
         onProgress(cur, if (finished) dur else exo.currentPosition, dur)
     }
 
-    fun buildMediaItem(cur: PlayItem): MediaItem = MediaItem.Builder()
+    fun buildMediaItem(cur: PlayItem, shifted: Map<String, Uri> = emptyMap()): MediaItem = MediaItem.Builder()
             .setUri(cur.url)
             .setSubtitleConfigurations(
                 cur.subtitles.map { s ->
@@ -205,7 +226,7 @@ fun PlayerScreen(
                         path.endsWith(".ass") || path.endsWith(".ssa") -> MimeTypes.TEXT_SSA
                         else -> MimeTypes.APPLICATION_SUBRIP
                     }
-                    MediaItem.SubtitleConfiguration.Builder(Uri.parse(s.url))
+                    MediaItem.SubtitleConfiguration.Builder(shifted[s.url] ?: Uri.parse(s.url))
                         .setMimeType(mime)
                         .setLanguage(s.language)
                         .setLabel(s.label)
@@ -334,6 +355,8 @@ fun PlayerScreen(
         buffering = true
         positionMs = 0L
         durationMs = 0L
+        subOffsetMs = 0L
+        showEpisodes = false
         val mediaItem = buildMediaItem(cur)
         if (subtitlesOn && cur.subtitles.isNotEmpty()) {
             exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
@@ -377,8 +400,8 @@ fun PlayerScreen(
     }
 
     // Controls hide by themselves after a few seconds.
-    LaunchedEffect(overlay, overlayTick, picker) {
-        if (overlay && picker == null && !failed) {
+    LaunchedEffect(overlay, overlayTick, picker, showEpisodes) {
+        if (overlay && picker == null && !showEpisodes && !failed) {
             delay(7_000)
             overlay = false
         }
@@ -406,10 +429,10 @@ fun PlayerScreen(
     val firstButtonFocus = remember { FocusRequester() }
     val pickerFocus = remember { FocusRequester() }
 
-    LaunchedEffect(overlay, picker) {
+    LaunchedEffect(overlay, picker, showEpisodes) {
         runCatching {
             when {
-                picker != null -> pickerFocus.requestFocus()
+                picker != null || showEpisodes -> pickerFocus.requestFocus()
                 overlay -> firstButtonFocus.requestFocus()
                 else -> rootFocus.requestFocus()
             }
@@ -417,7 +440,7 @@ fun PlayerScreen(
     }
 
     BackHandler {
-        if (picker != null) picker = null else onClose()
+        if (showEpisodes) showEpisodes = false else if (picker != null) picker = null else onClose()
     }
 
     val item = playlist[index]
@@ -456,6 +479,55 @@ fun PlayerScreen(
 
     fun togglePlay() {
         if (exo.playWhenReady) exo.pause() else exo.play()
+    }
+
+    // Subtitles out of step? Shift them earlier or later and reload at the same spot.
+    fun nudgeSubs(deltaMs: Long) {
+        val cur = playlist[index]
+        if (cur.subtitles.isEmpty()) return
+        val newOffset = subOffsetMs + deltaMs
+        scope.launch {
+            val map = HashMap<String, Uri>()
+            cur.subtitles.take(12).forEach { sub ->
+                SubtitleShift.shifted(context, sub.url, newOffset)?.let { map[sub.url] = it }
+            }
+            if (map.isEmpty()) {
+                showHud("Couldn't move these subtitles")
+                return@launch
+            }
+            val lang = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_TEXT && it.isSelected }?.getTrackFormat(0)?.language
+            if (lang != null) {
+                exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                    .setPreferredTextLanguage(lang)
+                    .build()
+            }
+            val pos = exo.currentPosition
+            exo.setMediaItem(buildMediaItem(cur, map), pos)
+            exo.prepare()
+            exo.play()
+            subOffsetMs = newOffset
+            showHud("Subtitles " + (if (newOffset >= 0) "+" else "-") + "%.1fs".format(kotlin.math.abs(newOffset) / 1000f))
+        }
+    }
+
+    // Jump to another episode of this series from inside the player.
+    fun playEpisode(ep: com.skyqlike.iptv.data.stremio.StremioVideo) {
+        val resolver = resolveEpisode ?: return
+        showEpisodes = false
+        statusMessage = "Loading S${ep.season} E${ep.episode}..."
+        buffering = true
+        scope.launch {
+            val p = runCatching { resolver(ep) }.getOrNull()
+            if (p == null) {
+                statusMessage = "Couldn't find a stream for that episode."
+                buffering = false
+                return@launch
+            }
+            saveProgress()
+            playlist.add(p)
+            index = playlist.lastIndex
+        }
     }
 
     // Touch controls: double-tap to skip, swipe for brightness and volume, plus speed and pop-out.
@@ -555,7 +627,25 @@ fun PlayerScreen(
                     keepScreenOn = true
                 }
             },
-            update = { it.resizeMode = ResizeModes[resizeIndex] },
+            update = {
+                it.resizeMode = ResizeModes[resizeIndex]
+                val st = SubStyles[subStyleIndex]
+                it.subtitleView?.apply {
+                    setApplyEmbeddedStyles(false)
+                    setApplyEmbeddedFontSizes(false)
+                    setFractionalTextSize(st.size)
+                    setStyle(
+                        CaptionStyleCompat(
+                            st.color,
+                            if (st.boxed) 0xB3000000.toInt() else android.graphics.Color.TRANSPARENT,
+                            android.graphics.Color.TRANSPARENT,
+                            if (st.boxed) CaptionStyleCompat.EDGE_TYPE_NONE else CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+                            0xFF000000.toInt(),
+                            null,
+                        )
+                    )
+                }
+            },
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -822,6 +912,18 @@ fun PlayerScreen(
                     }
                     PlayerButton("Audio", Modifier.width(100.dp)) { picker = C.TRACK_TYPE_AUDIO }
                     PlayerButton("Subtitles", Modifier.width(120.dp)) { picker = C.TRACK_TYPE_TEXT }
+                    PlayerButton("Text: ${SubStyles[subStyleIndex].label}", Modifier.width(170.dp)) {
+                        bump()
+                        subStyleIndex = (subStyleIndex + 1) % SubStyles.size
+                        uiPrefs.edit().putInt("substyle", subStyleIndex).apply()
+                    }
+                    if (item.subtitles.isNotEmpty()) {
+                        PlayerButton("Subs -0.5s", Modifier.width(120.dp)) { bump(); nudgeSubs(-500) }
+                        PlayerButton("Subs +0.5s", Modifier.width(120.dp)) { bump(); nudgeSubs(500) }
+                    }
+                    if (episodes.isNotEmpty() && resolveEpisode != null) {
+                        PlayerButton("Episodes", Modifier.width(120.dp)) { showEpisodes = true }
+                    }
                     PlayerButton("Size: ${ResizeLabels[resizeIndex]}", Modifier.width(150.dp)) {
                         bump()
                         resizeIndex = (resizeIndex + 1) % ResizeModes.size
@@ -842,6 +944,39 @@ fun PlayerScreen(
                                 )
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        // Episode list on the right.
+        if (showEpisodes) {
+            val ordered = remember(episodes) {
+                episodes.filter { it.season > 0 }.sortedWith(compareBy({ it.season }, { it.episode })).ifEmpty { episodes }
+            }
+            val nowId = item.externalId
+            val at = ordered.indexOfFirst { it.id == nowId }.coerceAtLeast(0)
+            val listState = rememberLazyListState(initialFirstVisibleItemIndex = (at - 2).coerceAtLeast(0))
+            Column(
+                Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(24.dp)
+                    .width(380.dp)
+                    .fillMaxHeight(0.9f)
+                    .background(Color(0xE6101014), RoundedCornerShape(16.dp))
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text("Episodes", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+                LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    itemsIndexed(ordered) { i, ep ->
+                        PlayerButton(
+                            (if (i == at) "▶  " else "") + "S${ep.season} E${ep.episode}  ${ep.title}",
+                            Modifier
+                                .fillMaxWidth()
+                                .then(if (i == at) Modifier.focusRequester(pickerFocus) else Modifier),
+                            accent = i == at,
+                        ) { playEpisode(ep) }
                     }
                 }
             }

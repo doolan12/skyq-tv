@@ -72,6 +72,8 @@ private data class PlayRequest(
     val items: List<PlayItem>,
     val start: Int,
     val next: (suspend (PlayItem) -> PlayItem?)? = null,
+    val episodes: List<StremioVideo> = emptyList(),
+    val resolveEpisode: (suspend (StremioVideo) -> PlayItem?)? = null,
 )
 
 /** A title that has been opened, and whether Play was pressed to open it. */
@@ -349,9 +351,12 @@ private fun ReelApp(context: Context) {
             var nextResolver: (suspend (PlayItem) -> PlayItem?)? = null
             if (video != null) {
                 val ordered = title.videos.filter { it.season > 0 }.sortedWith(compareBy({ it.season }, { it.episode }))
-                val at = ordered.indexOfFirst { it.id == video.id }
-                val nv = if (at >= 0) ordered.getOrNull(at + 1) else null
-                if (nv != null) nextResolver = { _ -> resolve(nv) }
+                // Works out the next episode from whichever one is playing now (it changes if you pick another).
+                nextResolver = { cur ->
+                    val i = ordered.indexOfFirst { it.id == cur.externalId }
+                    val n = if (i >= 0) ordered.getOrNull(i + 1) else null
+                    if (n != null) resolve(n) else null
+                }
             }
             val canFind = addons.any { it.supports("subtitles", subType, videoId) }
             scope.launch {
@@ -378,6 +383,8 @@ private fun ReelApp(context: Context) {
                     ),
                     0,
                     nextResolver,
+                    if (video != null) title.videos else emptyList(),
+                    if (video != null) { ep -> resolve(ep) } else null,
                 )
             }
         },
@@ -564,6 +571,8 @@ private fun ReelApp(context: Context) {
                 audioLang = settings.audioLang,
                 skipIntroOn = settings.skipIntro,
                 nextEpisode = request.next,
+                episodes = request.episodes,
+                resolveEpisode = request.resolveEpisode,
                 alternatesFor = { item -> item.streamKey?.let { streamCache[it] }?.playable?.map { it.url } ?: emptyList() },
                 autoNext = settings.autoNext,
             )
