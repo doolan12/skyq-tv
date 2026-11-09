@@ -60,8 +60,8 @@ import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.delay
 
-private val TabNames = listOf("Home", "Guide", "Search", "Movies", "Library", "Settings")
-private val TabIcons = listOf("home", "guide", "search", "movies", "library", "settings")
+private val TabNames = listOf("Home", "Guide", "Sport", "Search", "Movies", "Library", "Settings")
+private val TabIcons = listOf("home", "guide", "sports", "search", "movies", "library", "settings")
 
 /**
  * The phone layout: one screen at a time with a menu along the bottom.
@@ -81,6 +81,7 @@ fun PhoneShell(
     libraryContent: @Composable () -> Unit,
     settingsContent: @Composable () -> Unit,
     searchContent: @Composable () -> Unit,
+    matchCentreContent: @Composable () -> Unit,
     extraRails: List<com.skyqlike.iptv.ui.common.Rail> = emptyList(),
 ) {
     var tab by remember { mutableIntStateOf(0) }
@@ -96,9 +97,10 @@ fun PhoneShell(
             when (tab) {
                 0 -> PhoneHome(channels, epg, onPlay, favouriteKeys, recentKeys, continueWatching, onPlayHistory, onToggleFavourite, extraRails)
                 1 -> PhoneGuide(channels, epg, onPlay, favouriteKeys, recentKeys, onToggleFavourite)
-                2 -> searchContent()
-                3 -> moviesContent()
-                4 -> libraryContent()
+                2 -> matchCentreContent()
+                3 -> searchContent()
+                4 -> moviesContent()
+                5 -> libraryContent()
                 else -> settingsContent()
             }
         }
@@ -119,7 +121,7 @@ fun PhoneShell(
                     MenuIcon(TabIcons[i], if (on) Palette.Accent else Palette.TextSecondary, 24.dp)
                     Text(
                         name,
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
                         color = if (on) Palette.Accent else Palette.TextSecondary,
                         modifier = Modifier.padding(top = 3.dp),

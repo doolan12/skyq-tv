@@ -338,6 +338,7 @@ class MainActivity : ComponentActivity() {
                                 favouriteKeys = favourites,
                                 scoresRepo = scoresRepo,
                                 onPlay = playChannel,
+                                compact = phone,
                             )
                         },
                         multiViewContent = {

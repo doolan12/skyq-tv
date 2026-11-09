@@ -92,7 +92,10 @@ fun MatchCentreScreen(
     favouriteKeys: Set<String>,
     scoresRepo: ScoresRepository,
     onPlay: (Channel) -> Unit,
+    /** True on a phone: tighter margins, and score lines wrap onto two lines. */
+    compact: Boolean = false,
 ) {
+    val edge = if (compact) 16.dp else 36.dp
     var sportIndex by remember { mutableIntStateOf(0) }
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -152,12 +155,12 @@ fun MatchCentreScreen(
     val later = matches.filter { it.programme.start >= nowMs + SOON_MS }
 
     Column(Modifier.fillMaxSize().padding(top = 20.dp)) {
-        Text("Match Centre", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary, modifier = Modifier.padding(horizontal = 36.dp))
+        Text("Match Centre", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary, modifier = Modifier.padding(horizontal = edge))
         Text(
             "Sport on now and coming up in the next 12 hours, from your TV guide.",
             fontSize = 14.sp,
             color = Palette.TextSecondary,
-            modifier = Modifier.padding(horizontal = 36.dp, vertical = 4.dp),
+            modifier = Modifier.padding(horizontal = edge, vertical = 4.dp),
         )
         CategoryBar(Labels, sportIndex) { sportIndex = it }
         if (matches.isEmpty() && shownScores.isEmpty()) {
@@ -165,12 +168,12 @@ fun MatchCentreScreen(
                 if (epg.isEmpty()) "There is no TV guide loaded yet." else "No sport found in the guide for this choice.",
                 fontSize = 16.sp,
                 color = Palette.TextSecondary,
-                modifier = Modifier.padding(36.dp),
+                modifier = Modifier.padding(edge),
             )
         } else {
             LazyColumn(
                 Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 36.dp, vertical = 12.dp),
+                contentPadding = PaddingValues(horizontal = edge, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 if (shownScores.isNotEmpty()) {
@@ -201,29 +204,44 @@ fun MatchCentreScreen(
                                     color = if (sc.state == GameState.LIVE) Color(0xFFFF5A5A) else Palette.TextSecondary,
                                     modifier = Modifier.width(56.dp),
                                 )
-                                Text(
-                                    "${sc.home}  ${sc.homeScore} - ${sc.awayScore}  ${sc.away}",
-                                    fontSize = 17.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Palette.TextPrimary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                Text(
-                                    listOf(sc.league, sc.detail).filter { it.isNotBlank() }.joinToString("  |  ") + if (carrier != null) "  |  ${carrier.name}" else "",
-                                    fontSize = 13.sp,
-                                    color = Palette.TextSecondary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
+                                val detailText = listOf(sc.league, sc.detail).filter { it.isNotBlank() }.joinToString("  |  ") + if (carrier != null) "  |  ${carrier.name}" else ""
+                                if (compact) {
+                                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text(
+                                            "${sc.home}  ${sc.homeScore} - ${sc.awayScore}  ${sc.away}",
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Palette.TextPrimary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                        Text(detailText, fontSize = 12.sp, color = Palette.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                } else {
+                                    Text(
+                                        "${sc.home}  ${sc.homeScore} - ${sc.awayScore}  ${sc.away}",
+                                        fontSize = 17.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Palette.TextPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    Text(
+                                        listOf(sc.league, sc.detail).filter { it.isNotBlank() }.joinToString("  |  ") + if (carrier != null) "  |  ${carrier.name}" else "",
+                                        fontSize = 13.sp,
+                                        color = Palette.TextSecondary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
                             }
                         }
                     }
                 }
-                section("On now", live, nowMs, clock, ::scoreFor, onPlay)
-                section("Starting soon", soon, nowMs, clock, ::scoreFor, onPlay)
-                section("Later today", later, nowMs, clock, ::scoreFor, onPlay)
+                section("On now", live, nowMs, clock, ::scoreFor, compact, onPlay)
+                section("Starting soon", soon, nowMs, clock, ::scoreFor, compact, onPlay)
+                section("Later today", later, nowMs, clock, ::scoreFor, compact, onPlay)
             }
         }
     }
@@ -235,6 +253,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.section(
     nowMs: Long,
     clock: SimpleDateFormat,
     scoreFor: (Match) -> Score?,
+    compact: Boolean,
     onPlay: (Channel) -> Unit,
 ) {
     if (list.isEmpty()) return
@@ -259,9 +278,9 @@ private fun androidx.compose.foundation.lazy.LazyListScope.section(
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (isLive) Color(0xFFFF5A5A) else Palette.Accent,
-                    modifier = Modifier.width(84.dp),
+                    modifier = Modifier.width(if (compact) 62.dp else 84.dp),
                 )
-                Artwork(m.channel.logoUrl, m.channel.name, Modifier.width(64.dp).height(44.dp).clip(RoundedCornerShape(8.dp)), ContentScale.Fit)
+                if (!compact) Artwork(m.channel.logoUrl, m.channel.name, Modifier.width(64.dp).height(44.dp).clip(RoundedCornerShape(8.dp)), ContentScale.Fit)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     val sc = if (isLive) scoreFor(m) else null
                     Text(m.programme.title + if (sc != null) "   ${sc.homeScore} - ${sc.awayScore}" + (if (sc.detail.isNotBlank()) "  (${sc.detail})" else "") else "", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)

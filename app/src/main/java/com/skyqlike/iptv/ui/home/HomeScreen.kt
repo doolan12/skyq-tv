@@ -155,6 +155,7 @@ fun HomeScreen(
             libraryContent = libraryContent,
             settingsContent = settingsContent,
             searchContent = searchContent,
+            matchCentreContent = matchCentreContent,
             extraRails = extraRails,
         )
         return
