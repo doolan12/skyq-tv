@@ -88,6 +88,7 @@ fun PhoneShell(
     catchUpContent: @Composable () -> Unit,
     recordingsContent: @Composable () -> Unit,
     extraRails: List<com.skyqlike.iptv.ui.common.Rail> = emptyList(),
+    extras: com.skyqlike.iptv.ui.home.HomeExtras = com.skyqlike.iptv.ui.home.HomeExtras(),
 ) {
     var tab by remember { mutableIntStateOf(0) }
     // Which page is open under More, or -1 for the list of pages.
@@ -104,7 +105,7 @@ fun PhoneShell(
     ) {
         Box(Modifier.weight(1f).fillMaxWidth().statusBarsPadding()) {
             when (tab) {
-                0 -> PhoneHome(channels, epg, onPlay, favouriteKeys, recentKeys, continueWatching, onPlayHistory, onToggleFavourite, extraRails)
+                0 -> PhoneHome(channels, epg, onPlay, favouriteKeys, recentKeys, continueWatching, onPlayHistory, onToggleFavourite, extraRails, extras)
                 1 -> PhoneGuide(channels, epg, onPlay, favouriteKeys, recentKeys, onToggleFavourite)
                 2 -> matchCentreContent()
                 3 -> searchContent()
@@ -162,6 +163,7 @@ private fun PhoneHome(
     onPlayHistory: (HistoryEntry) -> Unit,
     onToggleFavourite: (Channel) -> Unit,
     extraRails: List<com.skyqlike.iptv.ui.common.Rail>,
+    extras: com.skyqlike.iptv.ui.home.HomeExtras,
 ) {
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -171,8 +173,13 @@ private fun PhoneHome(
         }
     }
     val nowFor: (Channel) -> Programme? = remember(epg, nowMs) { { ch: Channel -> epg.nowOn(ch, nowMs) } }
-    val rails = remember(channels, favouriteKeys, recentKeys, continueWatching, nowFor, extraRails) {
-        buildRails(channels, favouriteKeys, recentKeys, continueWatching, onPlay, onPlayHistory, onToggleFavourite, nowFor) + extraRails
+    val hour = remember(nowMs) { java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) }
+    val live = remember(extras.scores, channels, nowFor) { com.skyqlike.iptv.ui.home.liveGames(extras.scores, channels, nowFor) }
+    val rails = remember(channels, favouriteKeys, recentKeys, continueWatching, nowFor, extraRails, extras, live, hour) {
+        com.skyqlike.iptv.ui.home.buildHomeRails(channels, favouriteKeys, recentKeys, continueWatching, onPlay, onPlayHistory, onToggleFavourite, nowFor, extras, live, extraRails, hour)
+    }
+    val spotlights = remember(channels, favouriteKeys, continueWatching, nowFor, live, extras, hour) {
+        com.skyqlike.iptv.ui.home.buildSpotlights(channels, nowFor, favouriteKeys, continueWatching, live, extras, hour, onPlay, onPlayHistory)
     }
     val featured = remember(channels, favouriteKeys, nowFor) {
         channels.firstOrNull { it.favKey in favouriteKeys && nowFor(it) != null }
@@ -192,7 +199,11 @@ private fun PhoneHome(
                 Text(timeText, fontSize = 20.sp, fontWeight = FontWeight.Light, color = Palette.TextPrimary)
             }
         }
-        featured?.let { ch -> item { PhoneHero(ch, nowFor(ch), onPlay) } }
+        if (spotlights.isNotEmpty()) {
+            item { com.skyqlike.iptv.ui.home.PhoneSpotlight(spotlights) }
+        } else {
+            featured?.let { ch -> item { PhoneHero(ch, nowFor(ch), onPlay) } }
+        }
         items(rails, key = { it.title }) { rail -> RailRow(rail, 170.dp, 96.dp, edge = 16.dp) }
     }
 }

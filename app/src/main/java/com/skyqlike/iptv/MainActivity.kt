@@ -302,6 +302,29 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                // Live scores for the Home banner and the "Live Sport Now" row. Checked every couple of minutes, quietly.
+                var liveScores by remember { mutableStateOf<List<com.skyqlike.iptv.data.scores.Score>>(emptyList()) }
+                LaunchedEffect(channels) {
+                    if (channels !== sample) {
+                        delay(6_000)
+                        while (true) {
+                            liveScores = runCatching { scoresRepo.load() }.getOrDefault(liveScores)
+                            delay(120_000)
+                        }
+                    }
+                }
+                val homeExtras = remember(liveScores, recentKeys, vod) {
+                    val ready = vod as? VodState.Ready
+                    com.skyqlike.iptv.ui.home.HomeExtras(
+                        scores = liveScores,
+                        watchCounts = historyStore.channelCounts(),
+                        movies = ready?.catalog?.movies.orEmpty(),
+                        series = ready?.catalog?.series.orEmpty(),
+                        onOpenMovie = { homeMovie = it },
+                        onOpenSeries = { homeSeries = it },
+                    )
+                }
+
                 val playHistory: (HistoryEntry) -> Unit = { e ->
                     playRequest = PlayRequest(
                         listOf(PlayItem(e.key, e.title, e.subtitle, e.url, e.kind, imageUrl = e.imageUrl)),
@@ -313,6 +336,7 @@ class MainActivity : ComponentActivity() {
                     HomeScreen(
                         phone = phone,
                         extraRails = vodRows,
+                        extras = homeExtras,
                         epg = epg,
                         channels = shownChannels,
                         onPlay = playChannel,

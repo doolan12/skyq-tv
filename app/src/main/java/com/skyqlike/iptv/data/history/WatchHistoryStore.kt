@@ -105,12 +105,26 @@ class WatchHistoryStore(context: Context) {
         }
     }
 
+    /** How many times each channel has been opened, for the "Most Watched" row. */
+    fun channelCounts(): Map<String, Int> {
+        val text = prefs.getString("counts", null) ?: return emptyMap()
+        return try {
+            val o = JSONObject(text)
+            o.keys().asSequence().associateWith { o.getInt(it) }
+        } catch (e: Exception) {
+            emptyMap()
+        }
+    }
+
     fun addRecentChannel(favKey: String) {
         val list = recentChannels().filterNot { it == favKey }.toMutableList()
         list.add(0, favKey)
         val arr = JSONArray()
         list.take(MAX_RECENT_CHANNELS).forEach { arr.put(it) }
-        prefs.edit().putString("recent", arr.toString()).apply()
+        val counts = JSONObject()
+        channelCounts().forEach { (k, v) -> counts.put(k, v) }
+        counts.put(favKey, counts.optInt(favKey, 0) + 1)
+        prefs.edit().putString("recent", arr.toString()).putString("counts", counts.toString()).apply()
     }
 
     /** Forgets everything watched (Continue Watching, Recently Watched). */

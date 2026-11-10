@@ -119,6 +119,33 @@ fun buildRails(
     ).filter { it.tiles.isNotEmpty() }
 }
 
+/**
+ * Everything for the Home page in one place: the usual rows, the smart ones (live games, most watched, news),
+ * the new movie and series rows, all put in the order that suits the time of day.
+ */
+fun buildHomeRails(
+    channels: List<Channel>,
+    favouriteKeys: Set<String>,
+    recentKeys: List<String>,
+    continueWatching: List<HistoryEntry>,
+    onPlay: (Channel) -> Unit,
+    onPlayHistory: (HistoryEntry) -> Unit,
+    onToggleFavourite: (Channel) -> Unit,
+    nowFor: (Channel) -> Programme?,
+    extras: HomeExtras,
+    live: List<LiveGame>,
+    extraRails: List<Rail>,
+    hour: Int,
+): List<Rail> {
+    val base = buildRails(channels, favouriteKeys, recentKeys, continueWatching, onPlay, onPlayHistory, onToggleFavourite, nowFor)
+    val smart = smartRails(channels, extras.watchCounts, live, onPlay) { ch -> channelTile(ch, nowFor, onPlay, onToggleFavourite) }
+        .filter { it.tiles.isNotEmpty() }
+    // "Popular Channels" is only a stand-in until there is enough watching history for "Most Watched".
+    val hasMost = smart.any { it.title == "Most Watched" }
+    val all = base.filter { !(hasMost && it.title == "Popular Channels") } + smart + extraRails
+    return orderRails(all, hour)
+}
+
 @Composable
 fun HomeScreen(
     channels: List<Channel>,
@@ -140,6 +167,7 @@ fun HomeScreen(
     recordingsContent: @Composable () -> Unit = {},
     /** Extra rows added under the channel rows (new movies and series). */
     extraRails: List<Rail> = emptyList(),
+    extras: HomeExtras = HomeExtras(),
     phone: Boolean = false,
 ) {
     if (phone) {
@@ -160,6 +188,7 @@ fun HomeScreen(
             catchUpContent = catchUpContent,
             recordingsContent = recordingsContent,
             extraRails = extraRails,
+            extras = extras,
         )
         return
     }
@@ -219,18 +248,23 @@ fun HomeScreen(
         Box(Modifier.fillMaxSize().padding(start = railWidth)) {
             when (section) {
                 "Home" -> {
-                    val rails = remember(channels, favouriteKeys, recentKeys, continueWatching, onToggleFavourite, nowFor, extraRails) {
-                        buildRails(channels, favouriteKeys, recentKeys, continueWatching, onPlay, onPlayHistory, onToggleFavourite, nowFor) + extraRails
+                    val hour = remember(minute) { java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) }
+                    val live = remember(extras.scores, channels, nowFor) { liveGames(extras.scores, channels, nowFor) }
+                    val rails = remember(channels, favouriteKeys, recentKeys, continueWatching, onToggleFavourite, nowFor, extraRails, extras, live, hour) {
+                        buildHomeRails(channels, favouriteKeys, recentKeys, continueWatching, onPlay, onPlayHistory, onToggleFavourite, nowFor, extras, live, extraRails, hour)
                     }
                     val featured = remember(channels, favouriteKeys, nowFor) {
                         channels.firstOrNull { it.favKey in favouriteKeys && nowFor(it) != null }
                             ?: channels.firstOrNull { nowFor(it) != null }
                             ?: channels.firstOrNull()
                     }
+                    val spotlights = remember(channels, favouriteKeys, continueWatching, nowFor, live, extras, hour) {
+                        buildSpotlights(channels, nowFor, favouriteKeys, continueWatching, live, extras, hour, onPlay, onPlayHistory)
+                    }
                     HomeContent(
                         rails, featured, nowFor,
                         { ch -> epg.nextOn(ch, System.currentTimeMillis()) },
-                        minute, onPlay, onToggleFavourite,
+                        minute, onPlay, onToggleFavourite, spotlights,
                     )
                 }
                 "Settings" -> settingsContent()
@@ -481,6 +515,7 @@ private fun HomeContent(
     minute: Int,
     onPlay: (Channel) -> Unit,
     onToggleFavourite: (Channel) -> Unit,
+    spotlights: List<Spotlight>,
 ) {
     // "More Info" opens a details page in place of the home page, so the remote can't wander behind it.
     var infoFor by remember { mutableStateOf<Channel?>(null) }
@@ -495,7 +530,11 @@ private fun HomeContent(
         verticalArrangement = Arrangement.spacedBy(22.dp),
     ) {
         item { SkyHeader(minute) }
-        featured?.let { ch -> item { SkyHero(ch, nowFor(ch), onPlay, { infoFor = ch }, onToggleFavourite) } }
+        if (spotlights.isNotEmpty()) {
+            item { SpotlightHero(spotlights) { sp -> infoFor = sp.channel } }
+        } else {
+            featured?.let { ch -> item { SkyHero(ch, nowFor(ch), onPlay, { infoFor = ch }, onToggleFavourite) } }
+        }
         items(rails, key = { it.title }) { rail ->
             RailRow(rail, 250.dp, 140.dp)
         }
