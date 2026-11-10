@@ -7,6 +7,9 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.os.Build
+import android.widget.Toast
+import com.skyqlike.iptv.data.record.RecState
+import com.skyqlike.iptv.data.record.Recorder
 import android.util.Rational
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -428,6 +431,8 @@ fun PlayerScreen(
     }
 
     val item = items[index]
+    // Whether the channel on screen is being recorded.
+    var recActive by remember(item.url) { mutableStateOf(Recorder.activeFor(context, item.url) != null) }
     val isLive = item.kind == PlayKind.LIVE
     val listForChannel = if (isLive) item.epgId?.let { epg[it] } else null
     val currentProg = listForChannel?.firstOrNull { nowMs >= it.start && nowMs < it.stop }
@@ -774,6 +779,23 @@ fun PlayerScreen(
                     if (seekable) {
                         PlayerButton("-10s", Modifier.width(80.dp)) { bump(); seekBy(-10_000) }
                         PlayerButton("+10s", Modifier.width(80.dp)) { bump(); seekBy(10_000) }
+                    }
+                    if (isLive) {
+                        PlayerButton(if (recActive) "Stop rec" else "Record", Modifier.width(110.dp)) {
+                            bump()
+                            val running = Recorder.activeFor(context, item.url)
+                            if (running != null) {
+                                if (running.state == RecState.RECORDING) Recorder.stop(context, running.id) else Recorder.cancel(context, running.id)
+                                recActive = false
+                                Toast.makeText(context, "Recording stopped. What was saved is in Recordings.", Toast.LENGTH_LONG).show()
+                            } else {
+                                val nowShow = item.epgId?.let { id -> epg[id] }?.firstOrNull { nowMs >= it.start && nowMs < it.stop }
+                                val stopAt = nowShow?.stop ?: (nowMs + 60 * 60_000L)
+                                Recorder.schedule(context, item.title, item.imageUrl, item.url, nowShow?.title ?: item.title, nowShow?.start ?: nowMs, stopAt)
+                                recActive = true
+                                Toast.makeText(context, "Recording ${nowShow?.title ?: item.title} until " + java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault()).format(java.util.Date(stopAt)), Toast.LENGTH_LONG).show()
+                            }
+                        }
                     }
                     if (isLive && items.size > 1) {
                         PlayerButton("Guide", Modifier.width(100.dp)) { openMini() }

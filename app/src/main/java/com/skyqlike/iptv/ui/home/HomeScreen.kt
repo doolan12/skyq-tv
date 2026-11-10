@@ -137,6 +137,7 @@ fun HomeScreen(
     searchContent: @Composable () -> Unit = {},
     multiViewContent: @Composable () -> Unit = {},
     matchCentreContent: @Composable () -> Unit = {},
+    recordingsContent: @Composable () -> Unit = {},
     /** Extra rows added under the channel rows (new movies and series). */
     extraRails: List<Rail> = emptyList(),
     phone: Boolean = false,
@@ -156,6 +157,8 @@ fun HomeScreen(
             settingsContent = settingsContent,
             searchContent = searchContent,
             matchCentreContent = matchCentreContent,
+            catchUpContent = catchUpContent,
+            recordingsContent = recordingsContent,
             extraRails = extraRails,
         )
         return
@@ -234,6 +237,7 @@ fun HomeScreen(
                 "Search" -> searchContent()
                 "Multi-view" -> multiViewContent()
                 "Match Centre" -> matchCentreContent()
+                "Recordings" -> recordingsContent()
                 "TV Guide" -> guideContent()
                 "Movies" -> moviesContent()
                 "My Library" -> libraryContent()
@@ -342,6 +346,7 @@ private fun menuEntries(categoriesOpen: Boolean): List<MenuEntry> = buildList {
     add(MenuLink("Multi-view", "all"))
     add(MenuLink("All Channels", "all"))
     add(MenuLink("Catch Up", "catchup"))
+    add(MenuLink("Recordings", "record"))
     add(MenuHeader("ON DEMAND"))
     add(MenuLink("Movies", "movies"))
     add(MenuLink("My Library", "library"))
@@ -561,6 +566,17 @@ private fun InfoPage(
                     backgroundColor = Color.White,
                 ) {
                     Text("Watch Now", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF101030), modifier = Modifier.align(Alignment.Center))
+                }
+                val recordContext = androidx.compose.ui.platform.LocalContext.current
+                (now ?: next)?.let { target ->
+                    FocusTile(
+                        onClick = { com.skyqlike.iptv.ui.record.recordProgramme(recordContext, channel, target) },
+                        modifier = Modifier.width(if (now != null) 150.dp else 190.dp).height(46.dp),
+                        corner = 23.dp,
+                        backgroundColor = Color(0x40FFFFFF),
+                    ) {
+                        Text(if (now != null) "Record" else "Record next", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.Center))
+                    }
                 }
                 FocusTile(
                     onClick = onClose,

@@ -49,6 +49,7 @@ import com.skyqlike.iptv.ui.theme.Palette
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
+import com.skyqlike.iptv.ui.record.recordProgramme
 import java.util.Locale
 
 // How wide the timeline is: every minute of TV is 6dp wide, so 30 minutes is 180dp.
@@ -227,12 +228,14 @@ private fun ProgrammeCell(
     val isNow = nowMs >= programme.start && nowMs < programme.stop
     val progress = ((nowMs - programme.start).toFloat() / (programme.stop - programme.start)).coerceIn(0f, 1f)
     val select = { onSelect(Selection(channel, programme)) }
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     // First press picks the programme (the remote does this just by landing on it).
     // Pressing OK again, or tapping it a second time, starts watching.
     FocusTile(
         onClick = { if (isSelected) onWatch() else select() },
         onFocus = select,
+        onLongClick = { recordProgramme(context, channel, programme) },
         modifier = Modifier
             .offset(x = DpPerMinute * startMin)
             .width((DpPerMinute * (endMin - startMin) - 4.dp).coerceAtLeast(16.dp))
@@ -336,14 +339,14 @@ private fun InfoPanel(
                 }
                 if (nowMs >= p.start && nowMs < p.stop) {
                     Text(
-                        "On now  |  Press OK (or tap twice) to watch",
+                        "On now  |  Press OK to watch  |  Hold OK to record",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = Palette.Accent,
                     )
                 } else {
                     Text(
-                        if (nowMs < p.start) "Starts at ${timeFormat.format(Date(p.start))}" else "Finished",
+                        if (nowMs < p.start) "Starts at ${timeFormat.format(Date(p.start))}  |  Hold OK to record" else "Finished",
                         fontSize = 14.sp,
                         color = Palette.TextSecondary,
                     )

@@ -60,8 +60,11 @@ import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.delay
 
-private val TabNames = listOf("Home", "Guide", "Sport", "Search", "Movies", "Library", "Settings")
-private val TabIcons = listOf("home", "guide", "sports", "search", "movies", "library", "settings")
+private val TabNames = listOf("Home", "Guide", "Sport", "Search", "More")
+private val TabIcons = listOf("home", "guide", "sports", "search", "categories")
+
+/** The pages under the More tab, with the icon shown beside each. */
+private val MorePages = listOf("Movies & Series" to "movies", "Catch Up" to "catchup", "Recordings" to "record", "My Library" to "library", "Settings" to "settings")
 
 /**
  * The phone layout: one screen at a time with a menu along the bottom.
@@ -82,11 +85,17 @@ fun PhoneShell(
     settingsContent: @Composable () -> Unit,
     searchContent: @Composable () -> Unit,
     matchCentreContent: @Composable () -> Unit,
+    catchUpContent: @Composable () -> Unit,
+    recordingsContent: @Composable () -> Unit,
     extraRails: List<com.skyqlike.iptv.ui.common.Rail> = emptyList(),
 ) {
     var tab by remember { mutableIntStateOf(0) }
+    // Which page is open under More, or -1 for the list of pages.
+    var morePage by remember { mutableIntStateOf(-1) }
     // Back goes to Home first, so it never throws you out of the app from the middle of a screen.
     BackHandler(enabled = tab != 0) { tab = 0 }
+    // Inside a More page, Back returns to the list first.
+    BackHandler(enabled = tab == 4 && morePage >= 0) { morePage = -1 }
 
     Column(
         Modifier
@@ -99,9 +108,14 @@ fun PhoneShell(
                 1 -> PhoneGuide(channels, epg, onPlay, favouriteKeys, recentKeys, onToggleFavourite)
                 2 -> matchCentreContent()
                 3 -> searchContent()
-                4 -> moviesContent()
-                5 -> libraryContent()
-                else -> settingsContent()
+                else -> when (morePage) {
+                    0 -> moviesContent()
+                    1 -> catchUpContent()
+                    2 -> recordingsContent()
+                    3 -> libraryContent()
+                    4 -> settingsContent()
+                    else -> PhoneMore { morePage = it }
+                }
             }
         }
         Row(
@@ -114,7 +128,10 @@ fun PhoneShell(
             TabNames.forEachIndexed { i, name ->
                 val on = i == tab
                 Column(
-                    Modifier.weight(1f).fillMaxHeight().clickable { tab = i },
+                    Modifier.weight(1f).fillMaxHeight().clickable {
+                        if (i == 4 && tab == 4) morePage = -1
+                        tab = i
+                    },
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                 ) {
@@ -359,6 +376,16 @@ private fun PhoneGuide(
                                 }
                             }
                             val isFavourite = channel.favKey in favouriteKeys
+                            val recordContext = androidx.compose.ui.platform.LocalContext.current
+                            FocusTile(
+                                onClick = { (now ?: next)?.let { com.skyqlike.iptv.ui.record.recordProgramme(recordContext, channel, it) } },
+                                modifier = Modifier.size(40.dp),
+                                corner = 20.dp,
+                                focusedScale = 1.1f,
+                                backgroundColor = Color(0x1AFFFFFF),
+                            ) {
+                                MenuIcon("record", Color(0xFFFF5A5A), 20.dp, Modifier.align(Alignment.Center))
+                            }
                             FocusTile(
                                 onClick = { onToggleFavourite(channel) },
                                 modifier = Modifier.size(40.dp),
@@ -376,6 +403,24 @@ private fun PhoneGuide(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/** The list of extra pages on the phone: Movies, Catch Up, Recordings, Library and Settings. */
+@Composable
+private fun PhoneMore(onOpen: (Int) -> Unit) {
+    Column(Modifier.fillMaxSize().padding(top = 14.dp)) {
+        Text("More", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+        MorePages.forEachIndexed { i, (name, icon) ->
+            Row(
+                Modifier.fillMaxWidth().clickable { onOpen(i) }.padding(horizontal = 16.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                MenuIcon(icon, Palette.Accent, 26.dp)
+                Text(name, fontSize = 19.sp, fontWeight = FontWeight.Medium, color = Palette.TextPrimary)
             }
         }
     }

@@ -15,6 +15,7 @@ import androidx.tv.material3.Text
 import kotlinx.coroutines.delay
 import com.skyqlike.iptv.data.model.favKey
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -105,6 +106,13 @@ class MainActivity : ComponentActivity() {
                 var reloadTick by remember { mutableIntStateOf(0) }
                 var forceNext by remember { mutableStateOf(false) }
                 var playRequest by remember { mutableStateOf<PlayRequest?>(null) }
+                // Recordings: the list lives on the device and updates the moment a recording starts, finishes or is removed.
+                val recStore = remember { com.skyqlike.iptv.data.record.RecordingStore(applicationContext) }
+                var recordings by remember { mutableStateOf(recStore.all()) }
+                DisposableEffect(Unit) {
+                    val stopListening = recStore.observe { recordings = recStore.all() }
+                    onDispose { stopListening() }
+                }
                 var homeMovie by remember { mutableStateOf<com.skyqlike.iptv.data.vod.Movie?>(null) }
                 var homeSeries by remember { mutableStateOf<com.skyqlike.iptv.data.vod.Series?>(null) }
                 var note by remember { mutableStateOf<String?>(null) }
@@ -331,6 +339,30 @@ class MainActivity : ComponentActivity() {
                                 previewEnabled = playRequest == null,
                             )
                         },
+                        recordingsContent = {
+                            com.skyqlike.iptv.ui.record.RecordingsScreen(
+                                recordings = recordings,
+                                onPlay = { r ->
+                                    playRequest = PlayRequest(
+                                        listOf(
+                                            PlayItem(
+                                                key = "rec:${r.id}",
+                                                title = r.title,
+                                                subtitle = r.channelName,
+                                                url = android.net.Uri.fromFile(java.io.File(r.filePath)).toString(),
+                                                kind = PlayKind.MOVIE,
+                                                imageUrl = r.logoUrl,
+                                            )
+                                        ),
+                                        0,
+                                    )
+                                },
+                                onStop = { com.skyqlike.iptv.data.record.Recorder.stop(applicationContext, it.id) },
+                                onCancel = { com.skyqlike.iptv.data.record.Recorder.cancel(applicationContext, it.id) },
+                                onDelete = { com.skyqlike.iptv.data.record.Recorder.delete(applicationContext, it.id) },
+                                compact = phone,
+                            )
+                        },
                         matchCentreContent = {
                             com.skyqlike.iptv.ui.sports.MatchCentreScreen(
                                 channels = shownChannels,
@@ -374,6 +406,7 @@ class MainActivity : ComponentActivity() {
                         },
                         catchUpContent = {
                             CatchUpScreen(
+                                compact = phone,
                                 channels = shownChannels,
                                 state = catchUp,
                                 message = catchUpMessage,

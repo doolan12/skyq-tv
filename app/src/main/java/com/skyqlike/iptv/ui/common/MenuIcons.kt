@@ -71,6 +71,10 @@ fun MenuIcon(name: String, tint: Color, size: Dp = 22.dp, modifier: Modifier = M
                 box(0.14f, 0.56f, 0.30f, 0.30f)
                 box(0.56f, 0.56f, 0.30f, 0.30f)
             }
+            "record" -> {
+                ring(0.5f, 0.5f, 0.38f)
+                dot(0.5f, 0.5f, 0.2f)
+            }
             "catchup" -> {
                 drawArc(tint, 40f, 290f, false, at(0.15f, 0.15f), Size(0.7f * w, 0.7f * w), style = line)
                 seg(0.5f, 0.5f, 0.5f, 0.3f)

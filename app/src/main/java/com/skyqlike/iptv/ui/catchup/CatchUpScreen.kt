@@ -47,6 +47,8 @@ fun CatchUpScreen(
     message: String?,
     onNeedData: () -> Unit,
     onPlay: (Channel, Programme) -> Unit,
+    /** True on a phone: channels and days run along the top, and the shows fill the screen. */
+    compact: Boolean = false,
 ) {
     LaunchedEffect(state) {
         if (state is CatchUpState.Idle) onNeedData()
@@ -55,10 +57,10 @@ fun CatchUpScreen(
     Column(Modifier.fillMaxSize().padding(top = 24.dp)) {
         Text(
             "Catch Up",
-            fontSize = 32.sp,
+            fontSize = if (compact) 26.sp else 32.sp,
             fontWeight = FontWeight.Bold,
             color = Palette.TextPrimary,
-            modifier = Modifier.padding(start = 36.dp, bottom = 12.dp),
+            modifier = Modifier.padding(start = if (compact) 16.dp else 36.dp, bottom = 12.dp),
         )
         when (state) {
             is CatchUpState.Idle, is CatchUpState.Loading -> Note("Loading catch-up shows...")
@@ -71,7 +73,7 @@ fun CatchUpScreen(
                 if (replayable.isEmpty()) {
                     Note("No catch-up shows found.")
                 } else {
-                    Browser(replayable, state.shows, message, onPlay)
+                    if (compact) CompactBrowser(replayable, state.shows, message, onPlay) else Browser(replayable, state.shows, message, onPlay)
                 }
             }
         }
@@ -218,5 +220,102 @@ private fun dayLabel(dayMs: Long): String {
         today -> "Today"
         dayStart(today - 1) -> "Yesterday"
         else -> SimpleDateFormat("EEE d MMM", Locale.getDefault()).format(Date(dayMs))
+    }
+}
+
+/** The phone layout of Catch Up: pick a channel along the top, then a day, then a show. */
+@Composable
+private fun CompactBrowser(
+    channels: List<Channel>,
+    shows: Map<String, List<Programme>>,
+    message: String?,
+    onPlay: (Channel, Programme) -> Unit,
+) {
+    var selectedId by remember { mutableStateOf(channels.first().id) }
+    val channel = channels.firstOrNull { it.id == selectedId } ?: channels.first()
+    var dayIndex by remember(channel.id) { mutableIntStateOf(0) }
+    val all = channel.epgId?.let { id -> shows[id] }.orEmpty()
+    val days = remember(all) { all.map { dayStart(it.start) }.distinct().sortedDescending() }
+    val day = days.getOrNull(dayIndex) ?: days.firstOrNull()
+    val list = remember(all, day) { all.filter { dayStart(it.start) == day }.sortedByDescending { it.start } }
+    val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
+
+    Column(Modifier.fillMaxSize()) {
+        androidx.compose.foundation.lazy.LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(bottom = 8.dp),
+        ) {
+            items(channels, key = { it.id }) { ch ->
+                val on = ch.id == channel.id
+                FocusTile(
+                    onClick = { selectedId = ch.id },
+                    modifier = Modifier.height(38.dp),
+                    corner = 19.dp,
+                    focusedScale = 1.05f,
+                    backgroundColor = if (on) Palette.Accent else Color0x26,
+                ) {
+                    Text(
+                        ch.name,
+                        fontSize = 14.sp,
+                        fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
+                        maxLines = 1,
+                        modifier = Modifier.align(Alignment.Center).padding(horizontal = 14.dp),
+                    )
+                }
+            }
+        }
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            days.forEachIndexed { i, d ->
+                val on = d == day
+                FocusTile(
+                    onClick = { dayIndex = i },
+                    modifier = Modifier.height(34.dp),
+                    corner = 17.dp,
+                    focusedScale = 1.05f,
+                    backgroundColor = if (on) Palette.Accent else Color0x26,
+                ) {
+                    Text(dayLabel(d), fontSize = 13.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Medium, modifier = Modifier.align(Alignment.Center).padding(horizontal = 12.dp))
+                }
+            }
+        }
+        if (message != null) {
+            Text(message, fontSize = 14.sp, color = Palette.Accent, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+        }
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(list) { show ->
+                FocusTile(
+                    onClick = { onPlay(channel, show) },
+                    modifier = Modifier.fillMaxWidth().height(68.dp),
+                    corner = 12.dp,
+                    focusedScale = 1.02f,
+                ) {
+                    Row(
+                        Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text(timeFormat.format(Date(show.start)), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Palette.Accent, modifier = Modifier.width(66.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(show.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                "${((show.stop - show.start) / 60_000L).toInt()} min" + if (show.description.isNotBlank()) "  |  ${show.description}" else "",
+                                fontSize = 12.sp,
+                                color = Palette.TextSecondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }

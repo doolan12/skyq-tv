@@ -262,9 +262,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.section(
     }
     items(list, key = { "${it.channel.id}|${it.programme.start}" }) { m ->
         val isLive = m.programme.start <= nowMs
+        val recordContext = androidx.compose.ui.platform.LocalContext.current
+        Row(Modifier.fillMaxWidth().height(72.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         FocusTile(
             onClick = { onPlay(m.channel) },
-            modifier = Modifier.fillMaxWidth().height(72.dp),
+            modifier = Modifier.weight(1f).fillMaxSize(),
             corner = 12.dp,
             focusedScale = 1.02f,
         ) {
@@ -293,6 +295,15 @@ private fun androidx.compose.foundation.lazy.LazyListScope.section(
                     }
                 }
             }
+        }
+        FocusTile(
+            onClick = { com.skyqlike.iptv.ui.record.recordProgramme(recordContext, m.channel, m.programme) },
+            modifier = Modifier.width(if (compact) 64.dp else 96.dp).fillMaxSize(),
+            corner = 12.dp,
+            focusedScale = 1.05f,
+        ) {
+            Text("REC", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF5A5A), modifier = Modifier.align(Alignment.Center))
+        }
         }
     }
 }
