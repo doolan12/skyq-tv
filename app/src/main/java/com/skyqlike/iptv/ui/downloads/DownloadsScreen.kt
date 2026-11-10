@@ -88,6 +88,8 @@ fun DownloadsScreen(
         }
         items(items.sortedByDescending { it.addedAt }, key = { it.key }) { o ->
             val p = progress[o.key]
+            // A real film is far bigger than this. A tiny file is the debrid service's "not cached yet" clip.
+            val tooSmall = p != null && p.done && (p.total.takeIf { it > 0 } ?: p.bytes) < 40_000_000L
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -103,6 +105,11 @@ fun DownloadsScreen(
                     if (o.subtitle.isNotBlank()) Text(o.subtitle, fontSize = 13.sp, color = Palette.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     when {
                         p == null -> Text("Checking...", fontSize = 13.sp, color = Palette.TextSecondary)
+                        tooSmall -> Text(
+                            "This is only the debrid service's \"not cached yet\" message, not the film. Delete it and download a stream marked Cached.",
+                            fontSize = 13.sp,
+                            color = Palette.Accent,
+                        )
                         p.done -> Text("Ready to watch  -  ${sizeText(p.total.takeIf { it > 0 } ?: p.bytes)}", fontSize = 13.sp, color = Palette.Accent, fontWeight = FontWeight.SemiBold)
                         p.failed -> Text("Didn't finish. Delete it and try again (the link may have expired).", fontSize = 13.sp, color = Palette.TextSecondary)
                         else -> {
@@ -118,7 +125,7 @@ fun DownloadsScreen(
                     }
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (p != null && p.done) ActionButton("Play", Modifier.width(96.dp), accent = true) { onPlay(o) }
+                    if (p != null && p.done && !tooSmall) ActionButton("Play", Modifier.width(96.dp), accent = true) { onPlay(o) }
                     ActionButton(if (armed == o.key) "Sure?" else "Delete", Modifier.width(96.dp)) {
                         if (armed == o.key) {
                             armed = null

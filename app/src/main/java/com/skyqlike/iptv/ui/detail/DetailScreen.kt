@@ -529,7 +529,9 @@ private fun StreamPicker(item: StremioItem, pick: Pick, actions: StremioActions,
                     )
                 }
                 LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    itemsIndexed(r.playable) { i, s ->
+                    // For a download, streams the debrid service already has come first (the others tend to save a useless clip).
+                    val shown = if (pick.download) r.playable.sortedByDescending { cacheState(it) } else r.playable
+                    itemsIndexed(shown) { i, s ->
                         FocusTile(
                             onClick = {
                                 if (pick.download) {
@@ -568,6 +570,12 @@ private fun StreamPicker(item: StremioItem, pick: Pick, actions: StremioActions,
                                         )
                                     }
                                 }
+                                if (pick.download) {
+                                    when (cacheState(s)) {
+                                        1 -> Text("Cached", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4CD964))
+                                        -1 -> Text("Not cached", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Palette.TextSecondary)
+                                    }
+                                }
                                 s.sizeBytes?.let {
                                     Text(formatSize(it), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.Accent)
                                 }
@@ -577,6 +585,16 @@ private fun StreamPicker(item: StremioItem, pick: Pick, actions: StremioActions,
                 }
             }
         }
+    }
+}
+
+/** Guesses from the stream's label whether the debrid service already has it: 1 = cached, -1 = not cached yet, 0 = can't tell. */
+private fun cacheState(s: com.skyqlike.iptv.data.stremio.StremioStream): Int {
+    val t = (s.name + " " + s.description).lowercase()
+    return when {
+        "download]" in t || "⏳" in t || "not cached" in t || "uncached" in t -> -1
+        "⚡" in t || "+]" in t || "cached" in t -> 1
+        else -> 0
     }
 }
 
