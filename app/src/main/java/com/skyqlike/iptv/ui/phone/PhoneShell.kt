@@ -200,7 +200,7 @@ private fun PhoneHome(
             }
         }
         if (spotlights.isNotEmpty()) {
-            item { com.skyqlike.iptv.ui.home.PhoneSpotlight(spotlights) }
+            item { com.skyqlike.iptv.ui.home.PhoneSpotlight(com.skyqlike.iptv.ui.home.rememberArtworkSpotlights(spotlights, extras)) }
         } else {
             featured?.let { ch -> item { PhoneHero(ch, nowFor(ch), onPlay) } }
         }

@@ -23,6 +23,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -45,6 +46,7 @@ import com.skyqlike.iptv.data.model.Programme
 import com.skyqlike.iptv.data.model.favKey
 import com.skyqlike.iptv.data.scores.GameState
 import com.skyqlike.iptv.data.scores.Score
+import com.skyqlike.iptv.data.tmdb.ArtKind
 import com.skyqlike.iptv.data.vod.Movie
 import com.skyqlike.iptv.data.vod.Series
 import com.skyqlike.iptv.ui.common.Artwork
@@ -55,6 +57,8 @@ import kotlinx.coroutines.delay
 /** Extra things the Home page needs to be smart: scores, what you watch most, and what is new. */
 class HomeExtras(
     val scores: List<Score> = emptyList(),
+    val tmdb: com.skyqlike.iptv.data.tmdb.TmdbRepository? = null,
+    val tmdbKey: String = "",
     val watchCounts: Map<String, Int> = emptyMap(),
     val movies: List<Movie> = emptyList(),
     val series: List<Series> = emptyList(),
@@ -85,7 +89,7 @@ fun liveGames(scores: List<Score>, channels: List<Channel>, nowFor: (Channel) ->
 }
 
 /** One slide of the big banner at the top of Home. */
-class Spotlight(
+data class Spotlight(
     val label: String,
     val title: String,
     val meta: String,
@@ -101,6 +105,10 @@ class Spotlight(
     val colors: List<Color>,
     val onWatch: () -> Unit,
     val onInfo: (() -> Unit)?,
+    /** When set, and the slide has no banner picture, TMDB is asked for one using [artTitle]. */
+    val artKind: ArtKind? = null,
+    val artTitle: String = title,
+    val artYear: String? = null,
 )
 
 private val SportColors = listOf(Color(0xFF0B5E3A), Color(0xFF14306B))
@@ -125,7 +133,7 @@ fun buildSpotlights(
     onPlayHistory: (HistoryEntry) -> Unit,
 ): List<Spotlight> {
     val now = System.currentTimeMillis()
-    fun liveSlide(label: String, ch: Channel, p: Programme?, title: String, meta: String, colors: List<Color>) = Spotlight(
+    fun liveSlide(label: String, ch: Channel, p: Programme?, title: String, meta: String, colors: List<Color>, lookup: Boolean = false) = Spotlight(
         label = label,
         title = title,
         meta = meta,
@@ -139,6 +147,8 @@ fun buildSpotlights(
         colors = colors,
         onWatch = { onPlay(ch) },
         onInfo = null,
+        artKind = if (lookup && p != null) ArtKind.ANY else null,
+        artTitle = p?.title ?: ch.name,
     )
 
     val sport = ArrayList<Spotlight>()
@@ -161,7 +171,7 @@ fun buildSpotlights(
     }
     val favourite = channels.firstOrNull { it.favKey in favouriteKeys && nowFor(it) != null }?.let { ch ->
         val p = nowFor(ch)
-        listOf(liveSlide("ON NOW  |  YOUR FAVOURITE", ch, p, p?.title ?: ch.name, ch.name, LiveColors))
+        listOf(liveSlide("ON NOW  |  YOUR FAVOURITE", ch, p, p?.title ?: ch.name, ch.name, LiveColors, lookup = true))
     }.orEmpty()
     val resume = continueWatching.firstOrNull()?.let { e ->
         listOf(
@@ -182,6 +192,7 @@ fun buildSpotlights(
                 description = m.description, bannerUrl = null, posterUrl = m.posterUrl, posterFit = false, progress = null,
                 channel = null, watchLabel = "View", colors = FilmColors,
                 onWatch = { extras.onOpenMovie(m) }, onInfo = null,
+                artKind = ArtKind.MOVIE, artTitle = m.name, artYear = m.year,
             )
         )
     }.orEmpty()
@@ -193,6 +204,7 @@ fun buildSpotlights(
                 description = s.plot, bannerUrl = null, posterUrl = s.coverUrl, posterFit = false, progress = null,
                 channel = null, watchLabel = "View", colors = SeriesColors,
                 onWatch = { extras.onOpenSeries(s) }, onInfo = null,
+                artKind = ArtKind.TV, artTitle = s.name, artYear = s.year,
             )
         )
     }.orEmpty()
@@ -207,7 +219,7 @@ fun buildSpotlights(
     // Nothing special to show: fall back to whatever is on now.
     val ch = channels.firstOrNull { nowFor(it) != null } ?: channels.firstOrNull() ?: return emptyList()
     val p = nowFor(ch)
-    return listOf(liveSlide("ON NOW  |  ${ch.name}", ch, p, p?.title ?: ch.name, ch.group, LiveColors))
+    return listOf(liveSlide("ON NOW  |  ${ch.name}", ch, p, p?.title ?: ch.name, ch.group, LiveColors, lookup = true))
 }
 
 /** Builds the smart rows: games you can watch now, what you watch most, news. Empty ones are dropped later. */
@@ -257,6 +269,32 @@ fun orderRails(rails: List<Rail>, hour: Int): List<Rail> {
         val rank = order.indexOf(r.title)
         if (rank >= 0) rank else order.size + i
     }.map { it.value }
+}
+
+/**
+ * Fills in wide banner pictures from TMDB where a slide has none. The slides show straight away,
+ * and each one gets its picture as soon as it arrives.
+ */
+@Composable
+fun rememberArtworkSpotlights(spotlights: List<Spotlight>, extras: HomeExtras): List<Spotlight> {
+    val tmdb = extras.tmdb
+    val key = extras.tmdbKey
+    val shown by produceState(spotlights, spotlights, key, tmdb) {
+        value = spotlights
+        if (tmdb == null || key.isBlank()) return@produceState
+        var current = spotlights
+        spotlights.forEachIndexed { i, s ->
+            val kind = s.artKind ?: return@forEachIndexed
+            if (s.bannerUrl != null) return@forEachIndexed
+            val art = tmdb.lookup(key, s.artTitle, s.artYear, kind) ?: return@forEachIndexed
+            if (art.backdrop == null) return@forEachIndexed
+            current = current.toMutableList().also {
+                it[i] = s.copy(bannerUrl = art.backdrop, description = s.description.ifBlank { art.overview.orEmpty() })
+            }
+            value = current
+        }
+    }
+    return shown
 }
 
 // ---------------------------------------------------------------- the banner

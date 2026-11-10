@@ -261,10 +261,11 @@ fun HomeScreen(
                     val spotlights = remember(channels, favouriteKeys, continueWatching, nowFor, live, extras, hour) {
                         buildSpotlights(channels, nowFor, favouriteKeys, continueWatching, live, extras, hour, onPlay, onPlayHistory)
                     }
+                    val shownSpotlights = rememberArtworkSpotlights(spotlights, extras)
                     HomeContent(
                         rails, featured, nowFor,
                         { ch -> epg.nextOn(ch, System.currentTimeMillis()) },
-                        minute, onPlay, onToggleFavourite, spotlights,
+                        minute, onPlay, onToggleFavourite, shownSpotlights,
                     )
                 }
                 "Settings" -> settingsContent()

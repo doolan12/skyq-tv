@@ -37,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import androidx.tv.material3.Text
 import com.skyqlike.iptv.data.model.Channel
 import com.skyqlike.iptv.data.model.favKey
@@ -63,6 +64,7 @@ fun SettingsScreen(
     onRefreshGuide: () -> Unit,
     onClearCache: () -> Unit,
     onClearHistory: () -> Unit,
+    onTestTmdb: suspend (String) -> String,
     providersContent: @Composable () -> Unit,
 ) {
     var page by remember { mutableStateOf("main") }
@@ -72,6 +74,7 @@ fun SettingsScreen(
         "providers" -> providersContent()
         "playback" -> PlaybackPage(settings, onChange)
         "parental" -> ParentalPage(settings, onChange, adultUnlocked, onAdultUnlockedChange)
+        "artwork" -> ArtworkPage(settings, onChange, onTestTmdb)
         "channels" -> ChannelsPage(settings, onChange, allChannels)
         "data" -> DataPage(status, busy, settings, onChange, onRefreshPlaylist, onRefreshGuide, onClearCache, onClearHistory)
         "about" -> AboutPage(providerName, visibleCount, allChannels.size)
@@ -84,6 +87,7 @@ fun SettingsScreen(
             LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 item { SettingRow("IPTV providers", summary = "In use: $providerName") { page = "providers" } }
                 item { SettingRow("Playback", summary = "Picture size, subtitles, audio language, reconnecting") { page = "playback" } }
+                item { SettingRow("Artwork (TMDB)", value = if (settings.tmdbKey.isBlank()) "Off" else "On", summary = "Posters and banners for movies and shows") { page = "artwork" } }
                 item { SettingRow("Channels", summary = "$visibleCount of ${allChannels.size} channels shown. Hide and reorder.") { page = "channels" } }
                 item { SettingRow("Parental controls", summary = parentalSummary) { page = "parental" } }
                 item { SettingRow("Data and refresh", summary = "Refresh the playlist or TV guide, clear saved data") { page = "data" } }
@@ -189,6 +193,43 @@ private fun PlaybackPage(settings: AppSettings, onChange: (AppSettings) -> Unit)
                     "Used when a stream offers more than one language.",
                 ) { onChange(settings.copy(audioLang = AudioLanguages[(langIndex + 1) % AudioLanguages.size].first)) }
             }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- artwork
+
+@Composable
+private fun ArtworkPage(settings: AppSettings, onChange: (AppSettings) -> Unit, onTest: suspend (String) -> String) {
+    var key by remember { mutableStateOf(settings.tmdbKey) }
+    var result by remember { mutableStateOf("") }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    Page("Artwork (TMDB)", "Paste your free key from themoviedb.org to get proper posters and wide banners on the Home page.") {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            LabeledField("TMDB key", key) { key = it.trim() }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ActionButton("Save", Modifier.width(120.dp), accent = true) {
+                    onChange(settings.copy(tmdbKey = key))
+                    result = if (key.isBlank()) "Artwork is off." else "Saved."
+                }
+                ActionButton("Test key", Modifier.width(140.dp)) {
+                    result = "Testing..."
+                    scope.launch { result = onTest(key) }
+                }
+                if (key.isNotEmpty()) {
+                    ActionButton("Remove", Modifier.width(120.dp)) {
+                        key = ""
+                        onChange(settings.copy(tmdbKey = ""))
+                        result = "Key removed. Artwork is off."
+                    }
+                }
+            }
+            if (result.isNotBlank()) Text(result, fontSize = 16.sp, color = Palette.Accent)
+            Text(
+                "Works with either kind of TMDB key (the short API key or the long read access token). It is kept on this device only.",
+                fontSize = 13.sp, color = Palette.TextSecondary,
+            )
+            Text("This product uses the TMDB API but is not endorsed or certified by TMDB.", fontSize = 12.sp, color = Palette.TextSecondary)
         }
     }
 }

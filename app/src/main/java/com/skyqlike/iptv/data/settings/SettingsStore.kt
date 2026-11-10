@@ -25,6 +25,8 @@ data class AppSettings(
     val hiddenChannels: Set<String> = emptySet(),
     /** Category order chosen by the user. Categories not listed keep the provider's order, after these. */
     val groupOrder: List<String> = emptyList(),
+    /** Free key from themoviedb.org, used to fetch posters and banners. Empty means off. */
+    val tmdbKey: String = "",
 )
 
 /** Saves settings on the device. */
@@ -50,6 +52,7 @@ class SettingsStore(context: Context) {
         hiddenGroups = prefs.getStringSet("hiddenGroups", emptySet())?.toSet() ?: emptySet(),
         hiddenChannels = prefs.getStringSet("hiddenChannels", emptySet())?.toSet() ?: emptySet(),
         groupOrder = readList(prefs.getString("groupOrder", null)),
+        tmdbKey = Secure.unlock(prefs.getString("tmdbKey", "") ?: ""),
     )
 
     fun save(s: AppSettings) {
@@ -67,6 +70,7 @@ class SettingsStore(context: Context) {
             .putStringSet("hiddenGroups", s.hiddenGroups)
             .putStringSet("hiddenChannels", s.hiddenChannels)
             .putString("groupOrder", order.toString())
+            .putString("tmdbKey", Secure.lock(s.tmdbKey))
             .apply()
     }
 

@@ -82,6 +82,7 @@ class MainActivity : ComponentActivity() {
                 val epgRepo = remember { EpgRepository(this@MainActivity) }
                 val vodRepo = remember { VodRepository() }
                 val scoresRepo = remember { com.skyqlike.iptv.data.scores.ScoresRepository() }
+                val tmdbRepo = remember { com.skyqlike.iptv.data.tmdb.TmdbRepository(this@MainActivity) }
                 val catchUpRepo = remember { CatchUpRepository() }
                 val favStore = remember { FavouritesStore(this@MainActivity) }
                 val settingsStore = remember { SettingsStore(this@MainActivity) }
@@ -313,10 +314,12 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-                val homeExtras = remember(liveScores, recentKeys, vod) {
+                val homeExtras = remember(liveScores, recentKeys, vod, settings.tmdbKey) {
                     val ready = vod as? VodState.Ready
                     com.skyqlike.iptv.ui.home.HomeExtras(
                         scores = liveScores,
+                        tmdb = tmdbRepo,
+                        tmdbKey = settings.tmdbKey,
                         watchCounts = historyStore.channelCounts(),
                         movies = ready?.catalog?.movies.orEmpty(),
                         series = ready?.catalog?.series.orEmpty(),
@@ -501,6 +504,7 @@ class MainActivity : ComponentActivity() {
                                     reloadTick++
                                     note = "Saved data cleared. Loading fresh copies..."
                                 },
+                                onTestTmdb = { tmdbRepo.test(it) },
                                 onClearHistory = {
                                     historyStore.clear()
                                     history = historyStore.entries()

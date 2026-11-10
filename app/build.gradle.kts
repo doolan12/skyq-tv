@@ -13,8 +13,8 @@ android {
         applicationId = "com.skyqlike.iptv"
         minSdk = 22          // covers older Fire TV sticks and Android TV boxes
         targetSdk = 34
-        versionCode = 31
-        versionName = "1.14.0"
+        versionCode = 32
+        versionName = "1.15.0"
     }
 
     // One fixed signing key for every build. Android only lets an update install over the old app
