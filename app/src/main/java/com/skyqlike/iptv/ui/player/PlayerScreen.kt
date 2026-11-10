@@ -646,6 +646,10 @@ fun PlayerScreen(
                 epg = epg,
                 nowMs = nowMs,
                 onPick = { pickMini(it) },
+                onRecordNext = { entry, show ->
+                    miniTick++
+                    com.skyqlike.iptv.ui.record.recordOnChannel(context, entry.title, entry.imageUrl, entry.url, show)
+                },
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -17,6 +18,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -42,6 +44,8 @@ internal fun MiniGuide(
     epg: Map<String, List<Programme>>,
     nowMs: Long,
     onPick: (Int) -> Unit,
+    /** Touch only: tap the "Next" line of a card to record that show. */
+    onRecordNext: (PlayItem, Programme) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state = rememberLazyListState()
@@ -51,7 +55,7 @@ internal fun MiniGuide(
         modifier
             .fillMaxWidth()
             .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xE6000000))))
-            .padding(top = 40.dp, bottom = 24.dp)
+            .padding(top = 40.dp, bottom = 16.dp)
     ) {
         LazyRow(
             state = state,
@@ -66,15 +70,16 @@ internal fun MiniGuide(
                 val isCurrent = e.key == currentKey
                 Column(
                     Modifier
-                        .width(220.dp)
-                        .height(112.dp)
+                        .width(230.dp)
+                        .height(140.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(if (isSelected) Color(0xFF26325F) else Color(0xCC15151A))
-                        .border(if (isSelected) 3.dp else 1.dp, if (isSelected) Color.White else Color(0x33FFFFFF), RoundedCornerShape(12.dp))
-                        .clickable { onPick(i) }
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                        .border(if (isSelected) 3.dp else 1.dp, if (isSelected) Color.White else Color(0x33FFFFFF), RoundedCornerShape(12.dp)),
                 ) {
+                  Column(
+                    Modifier.weight(1f).fillMaxWidth().clickable { onPick(i) }.padding(start = 12.dp, end = 12.dp, top = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                  ) {
                     Text(
                         e.title + if (isCurrent) "  (watching)" else "",
                         fontSize = 13.sp,
@@ -85,7 +90,7 @@ internal fun MiniGuide(
                     )
                     Text(
                         now?.title ?: "No guide data",
-                        fontSize = 16.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = Palette.TextPrimary,
                         maxLines = 2,
@@ -97,9 +102,16 @@ internal fun MiniGuide(
                             Box(Modifier.fillMaxWidth(progress.coerceAtLeast(0.02f)).height(3.dp).background(Palette.Accent))
                         }
                     }
-                    if (next != null) {
-                        Text("Next: ${next.title}", fontSize = 12.sp, color = Palette.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                  }
+                  if (next != null) {
+                    Row(
+                        Modifier.fillMaxWidth().height(34.dp).background(Color(0x33FFFFFF)).clickable { onRecordNext(e, next) }.padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Next: ${next.title}", fontSize = 12.sp, color = Palette.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        Text("REC", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF5A5A), modifier = Modifier.padding(start = 8.dp))
                     }
+                  }
                 }
             }
         }

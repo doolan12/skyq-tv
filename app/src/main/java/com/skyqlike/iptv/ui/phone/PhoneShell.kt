@@ -296,6 +296,13 @@ private fun PhoneGuide(
         }
     }
     val clock = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
+    // The channel whose upcoming shows are open (to watch or record one), or null for the channel list.
+    var scheduleFor by remember { mutableStateOf<Channel?>(null) }
+    BackHandler(enabled = scheduleFor != null) { scheduleFor = null }
+    scheduleFor?.let { ch ->
+        ChannelSchedule(ch, epg, nowMs, { onPlay(ch) }) { scheduleFor = null }
+        return
+    }
 
     Column(Modifier.fillMaxSize()) {
         Text(
@@ -378,13 +385,13 @@ private fun PhoneGuide(
                             val isFavourite = channel.favKey in favouriteKeys
                             val recordContext = androidx.compose.ui.platform.LocalContext.current
                             FocusTile(
-                                onClick = { (now ?: next)?.let { com.skyqlike.iptv.ui.record.recordProgramme(recordContext, channel, it) } },
+                                onClick = { scheduleFor = channel },
                                 modifier = Modifier.size(40.dp),
                                 corner = 20.dp,
                                 focusedScale = 1.1f,
                                 backgroundColor = Color(0x1AFFFFFF),
                             ) {
-                                MenuIcon("record", Color(0xFFFF5A5A), 20.dp, Modifier.align(Alignment.Center))
+                                MenuIcon("guide", Palette.TextSecondary, 20.dp, Modifier.align(Alignment.Center))
                             }
                             FocusTile(
                                 onClick = { onToggleFavourite(channel) },
@@ -421,6 +428,76 @@ private fun PhoneMore(onOpen: (Int) -> Unit) {
             ) {
                 MenuIcon(icon, Palette.Accent, 26.dp)
                 Text(name, fontSize = 19.sp, fontWeight = FontWeight.Medium, color = Palette.TextPrimary)
+            }
+        }
+    }
+}
+
+/** What is on, and coming up, on one channel. Tap Record on any show, or Watch on the one that is on now. */
+@Composable
+private fun ChannelSchedule(
+    channel: Channel,
+    epg: Map<String, List<Programme>>,
+    nowMs: Long,
+    onWatch: () -> Unit,
+    onClose: () -> Unit,
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val clock = remember { SimpleDateFormat("EEE h:mm a", Locale.getDefault()) }
+    val shows = remember(channel, epg, nowMs / 60_000L) {
+        channel.epgId?.let { epg[it] }.orEmpty()
+            .filter { it.stop > nowMs && it.start < nowMs + 24L * 3600_000L }
+            .sortedBy { it.start }
+    }
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(channel.name, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("Next 24 hours", fontSize = 13.sp, color = Palette.TextSecondary)
+            }
+            FocusTile(onClick = onClose, modifier = Modifier.width(80.dp).height(40.dp), corner = 20.dp, focusedScale = 1.05f, backgroundColor = Color(0x26FFFFFF)) {
+                Text("Back", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.Center))
+            }
+        }
+        if (shows.isEmpty()) {
+            Text("No guide information for this channel.", fontSize = 16.sp, color = Palette.TextSecondary, modifier = Modifier.padding(16.dp))
+        } else {
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(shows, key = { it.start }) { show ->
+                    val isNow = show.start <= nowMs
+                    Row(
+                        Modifier.fillMaxWidth().height(86.dp).background(Color(0x1AFFFFFF), RoundedCornerShape(12.dp)).padding(start = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                if (isNow) "ON NOW" else clock.format(Date(show.start)),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isNow) Color(0xFFFF5A5A) else Palette.Accent,
+                            )
+                            Text(show.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
+                        if (isNow) {
+                            FocusTile(onClick = onWatch, modifier = Modifier.padding(start = 6.dp).width(70.dp).height(52.dp), corner = 12.dp, focusedScale = 1.05f, backgroundColor = Color(0x26FFFFFF)) {
+                                Text("Watch", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.Center))
+                            }
+                        }
+                        FocusTile(
+                            onClick = { com.skyqlike.iptv.ui.record.recordProgramme(context, channel, show) },
+                            modifier = Modifier.padding(horizontal = 6.dp).width(70.dp).height(52.dp),
+                            corner = 12.dp,
+                            focusedScale = 1.05f,
+                            backgroundColor = Color(0x33FF5A5A),
+                        ) {
+                            Text("Record", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF8A8A), modifier = Modifier.align(Alignment.Center))
+                        }
+                    }
+                }
             }
         }
     }
