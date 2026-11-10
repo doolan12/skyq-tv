@@ -215,7 +215,7 @@ fun PlayerScreen(
             .setBufferDurationsMs(15_000, 50_000, 1_000, 3_000)
             .build()
         ExoPlayer.Builder(context)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(http))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(androidx.media3.datasource.DefaultDataSource.Factory(context, http)))
             .setLoadControl(loadControl)
             .build()
             .also { player ->
