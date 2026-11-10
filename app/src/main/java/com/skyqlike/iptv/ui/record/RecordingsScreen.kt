@@ -123,7 +123,7 @@ private fun LazyListScope.group(
             if (size > 0L) append("  |  ${sizeText(size)}")
             if (r.message.isNotBlank()) append("  |  ${r.message}")
         }
-        Row(Modifier.fillMaxWidth().height(if (compact) 72.dp else 68.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().height(if (r.message.isNotBlank()) 110.dp else if (compact) 72.dp else 68.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FocusTile(
                 onClick = { if (r.state == RecState.DONE) onPlay(r) },
                 modifier = Modifier.weight(1f).fillMaxSize(),
@@ -132,7 +132,7 @@ private fun LazyListScope.group(
             ) {
                 Column(Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalArrangement = Arrangement.Center) {
                     Text(r.title, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(detail, fontSize = 12.sp, color = Palette.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(detail, fontSize = 12.sp, color = Palette.TextSecondary, maxLines = if (r.message.isNotBlank()) 4 else 1, overflow = TextOverflow.Ellipsis)
                 }
             }
             FocusTile(

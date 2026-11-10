@@ -15,7 +15,6 @@ import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
-import com.skyqlike.iptv.data.Http
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -73,7 +72,7 @@ class RecordingService : Service() {
             try {
                 capture.run()
             } catch (e: Exception) {
-                message = Http.friendly(e)
+                message = e.message ?: e.javaClass.simpleName
             }
             val size = if (file.exists()) file.length() else 0L
             val latest = store.get(id) ?: rec

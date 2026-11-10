@@ -35,7 +35,11 @@ class StreamCapture(private val url: String, private val file: File, private val
                     copyRaw(path.removeSuffix(".m3u8") + ".ts")
                 } catch (e: IOException) {
                     if (total > 0L) throw e
-                    hls(url)
+                    try {
+                        hls(url)
+                    } catch (e2: IOException) {
+                        throw IOException("Plain stream: ${e.message} Playlist: ${e2.message}")
+                    }
                 }
             }
             path.endsWith(".m3u8") -> hls(url)
@@ -44,18 +48,37 @@ class StreamCapture(private val url: String, private val file: File, private val
         return total
     }
 
+    /** Opens an address and follows redirects by hand, including ones that switch between http and https. */
     private fun open(address: String): HttpURLConnection {
-        val c = URL(address).openConnection() as HttpURLConnection
-        c.connectTimeout = 15_000
-        c.readTimeout = 15_000
-        c.instanceFollowRedirects = true
-        c.setRequestProperty("User-Agent", ua)
-        val code = c.responseCode
-        if (code !in 200..299) {
-            c.disconnect()
-            throw IOException("HTTP $code")
+        var target = address
+        repeat(6) {
+            val c = URL(target).openConnection() as HttpURLConnection
+            c.connectTimeout = 15_000
+            c.readTimeout = 15_000
+            c.instanceFollowRedirects = false
+            c.setRequestProperty("User-Agent", ua)
+            val code = c.responseCode
+            when (code) {
+                in 200..299 -> return c
+                301, 302, 303, 307, 308 -> {
+                    val next = c.getHeaderField("Location")
+                    c.disconnect()
+                    if (next.isNullOrBlank()) throw IOException("The provider sent a redirect with nowhere to go.")
+                    target = URI(target).resolve(next.trim()).toString()
+                }
+                else -> {
+                    c.disconnect()
+                    throw IOException(
+                        when (code) {
+                            401, 403 -> "The provider refused the connection (HTTP $code)."
+                            404 -> "The provider has no such stream (HTTP 404)."
+                            else -> "The provider answered HTTP $code. If your plan allows one device at a time, stop watching first."
+                        }
+                    )
+                }
+            }
         }
-        return c
+        throw IOException("Too many redirects.")
     }
 
     private fun pump(input: InputStream, out: FileOutputStream, checkTime: Boolean) {
