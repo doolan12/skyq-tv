@@ -144,6 +144,10 @@ private fun ReelApp(context: Context) {
     }
     var detail by remember { mutableStateOf<DetailRequest?>(null) }
     var showSettings by remember { mutableStateOf(false) }
+    var showDownloads by remember { mutableStateOf(false) }
+    val offlineStore = remember { com.skyqlike.iptv.data.download.OfflineStore(context) }
+    val offlineHelper = remember { com.skyqlike.iptv.data.download.OfflineHelper(context) }
+    var offline by remember { mutableStateOf(offlineStore.all()) }
     var showShuffle by remember { mutableStateOf(false) }
     val shuffleState = remember { ShuffleState() }
     var playRequest by remember { mutableStateOf<PlayRequest?>(null) }
@@ -253,6 +257,7 @@ private fun ReelApp(context: Context) {
     val resetNavigation: () -> Unit = {
         detail = null
         showSettings = false
+        showDownloads = false
         browseUi.tab = 0
         browseUi.genre = null
         browseUi.query = ""
@@ -429,6 +434,41 @@ private fun ReelApp(context: Context) {
                 )
             }
         },
+        onDownload = { title, video, stream ->
+            val addons = (stremioState as? StremioState.Ready)?.home?.addons ?: emptyList()
+            val videoId = video?.id ?: title.id
+            val subType = if (video != null) "series" else title.type
+            val key = if (video != null) "stremio:series:${title.id}|${video.id}" else "stremio:${title.type}:${title.id}"
+            if (offlineStore.find(key) != null) {
+                note = "Already in Downloads"
+            } else {
+                note = "Starting download..."
+                scope.launch {
+                    val subs = runCatching {
+                        withTimeoutOrNull(6000L) { stremioRepo.subtitles(addons, subType, videoId) }
+                    }.getOrNull() ?: emptyList()
+                    val item = PlayItem(
+                        key = key,
+                        title = title.name,
+                        subtitle = if (video != null) "S${video.season} E${video.episode}  ${video.title}" else title.year,
+                        url = stream.url,
+                        kind = if (video != null) PlayKind.EPISODE else PlayKind.MOVIE,
+                        imageUrl = title.poster,
+                        externalId = video?.id,
+                        subtitles = subs,
+                        streamKey = null,
+                    )
+                    val saved = runCatching {
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { offlineHelper.start(item) }
+                    }.getOrNull()
+                    if (saved != null) {
+                        offlineStore.add(saved)
+                        offline = offlineStore.all()
+                        note = "Download started. Find it under Downloads."
+                    } else note = "Couldn't start that download."
+                }
+            }
+        },
     )
 
     // A Kids profile only sees child-friendly titles.
@@ -483,6 +523,20 @@ private fun ReelApp(context: Context) {
                 actions = actions,
                 canClose = false,
                 onClose = {},
+            )
+            showDownloads -> com.skyqlike.iptv.ui.downloads.DownloadsScreen(
+                items = offline,
+                helper = offlineHelper,
+                onPlay = { o ->
+                    showDownloads = false
+                    playRequest = PlayRequest(listOf(offlineHelper.toPlayItem(o)), 0, null)
+                },
+                onDelete = { o ->
+                    offlineHelper.remove(o)
+                    offlineStore.remove(o.key)
+                    offline = offlineStore.all()
+                },
+                onBack = { showDownloads = false },
             )
             showSettings -> SettingsScreen(
                 settings = settings,
@@ -561,6 +615,7 @@ private fun ReelApp(context: Context) {
                 onRefresh = { stremioState = StremioState.Idle },
                 onSettings = { askPinIfKids { showSettings = true } },
                 onShuffle = { showShuffle = true },
+                onDownloads = { showDownloads = true },
                 onSwitchProfile = {
                     askPinIfKids {
                         resetNavigation()

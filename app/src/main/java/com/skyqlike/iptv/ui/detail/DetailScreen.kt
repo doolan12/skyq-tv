@@ -61,7 +61,7 @@ import com.skyqlike.iptv.ui.theme.Palette
 data class EpisodeState(val finished: Boolean, val fraction: Float)
 
 /** Which episode is being played (null means it's a movie). */
-private data class Pick(val video: StremioVideo?)
+private data class Pick(val video: StremioVideo?, val download: Boolean = false)
 
 /**
  * A movie or series page: big picture, description, Play and My List,
@@ -113,7 +113,7 @@ fun DetailScreen(
 
     val pick = picking
     if (pick != null) {
-        StreamPicker(info, pick, actions, quickPlay, onBack = { picking = null })
+        StreamPicker(info, pick, actions, quickPlay && !pick.download, onBack = { picking = null })
         return
     }
 
@@ -135,6 +135,7 @@ fun DetailScreen(
                 episodeState = episodeState,
                 isFavourite = isFavourite,
                 onPlay = { picking = Pick(it) },
+                onDownload = { picking = Pick(it, true) },
                 onToggleFavourite = { actions.onToggleFavourite(info) },
                 onTrailer = { showTrailer = true },
                 onBack = onBack,
@@ -188,6 +189,7 @@ fun DetailScreen(
                                 textColor = Color.Black,
                             ) { target?.let { picking = Pick(it) } }
                             ActionButton(listLabel, Modifier.width(170.dp)) { actions.onToggleFavourite(info) }
+                            ActionButton("Download", Modifier.width(140.dp)) { target?.let { picking = Pick(it, true) } }
                             if (info.trailerId != null) ActionButton("Trailer", Modifier.width(130.dp)) { showTrailer = true }
                             ActionButton("Back", Modifier.width(110.dp)) { onBack() }
                         }
@@ -272,6 +274,7 @@ fun DetailScreen(
                         textColor = Color.Black,
                     ) { picking = Pick(null) }
                     ActionButton(listLabel, Modifier.width(170.dp)) { actions.onToggleFavourite(info) }
+                    ActionButton("Download", Modifier.width(140.dp)) { picking = Pick(null, true) }
                     if (info.trailerId != null) ActionButton("Trailer", Modifier.width(130.dp)) { showTrailer = true }
                     ActionButton("Back", Modifier.width(110.dp)) { onBack() }
                 }
@@ -303,6 +306,7 @@ private fun PhoneDetail(
     episodeState: (StremioVideo) -> EpisodeState?,
     isFavourite: Boolean,
     onPlay: (StremioVideo?) -> Unit,
+    onDownload: (StremioVideo?) -> Unit,
     onToggleFavourite: () -> Unit,
     onTrailer: () -> Unit,
     onBack: () -> Unit,
@@ -348,6 +352,7 @@ private fun PhoneDetail(
                 ) { if (isSeries) target?.let { onPlay(it) } else onPlay(null) }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     ActionButton(if (isFavourite) "✓ In My List" else "+ My List", Modifier.weight(1f)) { onToggleFavourite() }
+                    ActionButton("Download", Modifier.weight(1f)) { if (isSeries) target?.let { onDownload(it) } else onDownload(null) }
                     if (info.trailerId != null) ActionButton("Trailer", Modifier.weight(1f)) { onTrailer() }
                 }
                 if (info.description.isNotBlank()) {
@@ -403,6 +408,7 @@ private fun PhoneDetail(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
+                    ActionButton("Save", Modifier.width(72.dp)) { onDownload(ep) }
                 }
             }
             if (info.videos.isEmpty()) {
@@ -485,7 +491,7 @@ private fun StreamPicker(item: StremioItem, pick: Pick, actions: StremioActions,
     val label = pick.video?.let { "S${it.season} E${it.episode}  ${it.title}" } ?: item.year
 
     Column(Modifier.fillMaxSize().padding(horizontal = com.skyqlike.iptv.ui.common.pagePad(), vertical = 20.dp)) {
-        Text("Choose a stream", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+        Text(if (pick.download) "Choose a stream to download" else "Choose a stream", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
         Text(
             item.name + if (label.isNotBlank()) "  -  $label" else "",
             fontSize = 15.sp,
@@ -525,7 +531,12 @@ private fun StreamPicker(item: StremioItem, pick: Pick, actions: StremioActions,
                 LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     itemsIndexed(r.playable) { i, s ->
                         FocusTile(
-                            onClick = { actions.onPlay(item, pick.video, s) },
+                            onClick = {
+                                if (pick.download) {
+                                    actions.onDownload(item, pick.video, s)
+                                    onBack()
+                                } else actions.onPlay(item, pick.video, s)
+                            },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(76.dp)

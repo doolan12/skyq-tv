@@ -23,4 +23,6 @@ class StremioActions(
     /** Adds the titles saved in your Stremio library to My List. Returns a message to show. */
     val onImportLibrary: suspend () -> String,
     val onPlay: (item: StremioItem, video: StremioVideo?, stream: StremioStream) -> Unit,
+    /** Saves the chosen stream on this device for offline viewing. */
+    val onDownload: (item: StremioItem, video: StremioVideo?, stream: StremioStream) -> Unit = { _, _, _ -> },
 )

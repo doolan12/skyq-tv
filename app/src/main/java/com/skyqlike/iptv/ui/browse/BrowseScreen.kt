@@ -149,6 +149,7 @@ fun BrowseScreen(
     /** Opens a series and starts this episode (used by the "Up next" tiles in Continue Watching). */
     onOpenEpisode: (StremioItem, String) -> Unit,
     onRefresh: () -> Unit = {},
+    onDownloads: () -> Unit = {},
     /** Press and hold on a Continue Watching tile removes that title from the row. */
     onRemoveContinue: (StremioItem) -> Unit,
     /** Whether a silent trailer plays behind the banner. */
@@ -307,14 +308,16 @@ fun BrowseScreen(
 
     when (state) {
         is StremioState.Idle, is StremioState.Loading -> Column(Modifier.fillMaxSize()) {
-            TopBar(tab, selectTab, profile, onSettings, onSwitchProfile, onShuffle)
+            TopBar(tab, selectTab, profile, onSettings, onSwitchProfile, onShuffle, onDownloads)
             com.skyqlike.iptv.ui.common.ShimmerHome()
         }
         is StremioState.Error -> Column(Modifier.fillMaxSize()) {
-            TopBar(tab, selectTab, profile, onSettings, onSwitchProfile, onShuffle)
+            TopBar(tab, selectTab, profile, onSettings, onSwitchProfile, onShuffle, onDownloads)
             Column(Modifier.padding(horizontal = LocalSidePad.current), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(state.message, fontSize = 17.sp, color = Palette.TextSecondary)
                 ActionButton("Try again", Modifier.width(150.dp), accent = true) { actions.onNeedData() }
+                // No internet (on a flight, say)? Downloaded titles still play.
+                ActionButton("Open Downloads", Modifier.width(190.dp)) { onDownloads() }
             }
         }
         is StremioState.Ready -> {
@@ -592,7 +595,7 @@ fun BrowseScreen(
             val headerBox: @Composable () -> Unit = {
                 Column(Modifier.fillMaxWidth()) {
                     if (phone) PhoneTopBar(profile, onSettings, onSwitchProfile, onShuffle)
-                    else TopBar(tab, selectTab, profile, onSettings, onSwitchProfile, onShuffle)
+                    else TopBar(tab, selectTab, profile, onSettings, onSwitchProfile, onShuffle, onDownloads)
                     if (showBanner) {
                         val hero = focusedHero?.takeIf { browsing } ?: heroItems[heroIndex.coerceIn(0, heroItems.size - 1)]
                         InfoStrip(hero, compact = !isTv, onOpen = if (phone) ({ onOpen(hero) }) else null)
@@ -795,7 +798,7 @@ fun BrowseScreen(
                             )
                         }
                     }
-                    if (phone) PhoneBottomBar(tab, selectTab)
+                    if (phone) PhoneBottomBar(tab, selectTab, onDownloads)
                 }
             }
         }
@@ -813,6 +816,7 @@ private fun TopBar(
     onSettings: () -> Unit,
     onSwitchProfile: () -> Unit,
     onShuffle: () -> Unit,
+    onDownloads: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // On a phone there isn't room for the full name and wide buttons, so everything shrinks to fit.
@@ -844,6 +848,7 @@ private fun TopBar(
             ) {
                 TabNames.forEachIndexed { i, label -> NavItem(label, tab == i, itemWidth, itemFont) { onTab(i) } }
                 NavItem("Shuffle", false, itemWidth, itemFont) { onShuffle() }
+                NavItem("Downloads", false, if (compact) 96.dp else 120.dp, itemFont) { onDownloads() }
             }
             NavItem("Settings", false, if (compact) 76.dp else 100.dp, itemFont) { onSettings() }
             FocusTile(
@@ -884,7 +889,7 @@ private fun PhoneTopBar(profile: Profile, onSettings: () -> Unit, onSwitchProfil
 
 /** The phone's tabs along the bottom, where a thumb reaches them. */
 @Composable
-private fun PhoneBottomBar(tab: Int, onTab: (Int) -> Unit) {
+private fun PhoneBottomBar(tab: Int, onTab: (Int) -> Unit, onDownloads: () -> Unit) {
     Row(Modifier.fillMaxWidth().background(Color(0xF2101014)).navigationBarsPadding()) {
         TabNames.forEachIndexed { i, label ->
             val on = tab == i
@@ -900,6 +905,19 @@ private fun PhoneBottomBar(tab: Int, onTab: (Int) -> Unit) {
                     Box(Modifier.height(7.dp))
                     Text(label, fontSize = 12.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Medium, color = if (on) Color.White else Color(0xFF9A9AA6), maxLines = 1)
                 }
+            }
+        }
+        FocusTile(
+            onClick = onDownloads,
+            modifier = Modifier.weight(1.25f).height(54.dp),
+            corner = 0.dp,
+            focusedScale = 1f,
+            backgroundColor = Color.Transparent,
+        ) {
+            Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(Modifier.width(26.dp).height(3.dp))
+                Box(Modifier.height(7.dp))
+                Text("Downloads", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Color(0xFF9A9AA6), maxLines = 1)
             }
         }
     }
