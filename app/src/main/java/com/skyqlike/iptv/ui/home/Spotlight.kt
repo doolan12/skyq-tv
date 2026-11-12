@@ -64,6 +64,10 @@ class HomeExtras(
     val series: List<Series> = emptyList(),
     val onOpenMovie: (Movie) -> Unit = {},
     val onOpenSeries: (Series) -> Unit = {},
+    /** The person's team, and its games found in the guide. */
+    val teamName: String = "",
+    val teamMatches: List<TeamMatch> = emptyList(),
+    val onRemind: (TeamMatch) -> Unit = {},
 )
 
 /** A game that is on right now, with the channel and show carrying it. */
@@ -209,12 +213,45 @@ fun buildSpotlights(
         )
     }.orEmpty()
 
-    val ordered = when (hour) {
+    // The person's own team always comes first: live now, or the next game if it is close.
+    val teamSlides = ArrayList<Spotlight>()
+    val names = teamNames(extras.teamName)
+    if (names.isNotEmpty()) {
+        val teamLive = live.firstOrNull { g -> names.any { n -> g.score.home.lowercase().contains(n) || g.score.away.lowercase().contains(n) } }
+        val matches = extras.teamMatches
+        val onNow = matches.firstOrNull { it.programme.start <= now }
+        val next = matches.firstOrNull { it.programme.start > now && it.programme.start - now < 36L * 60 * 60 * 1000 }
+        val pretty = extras.teamName.split(',').first().trim().replaceFirstChar { it.uppercase() }
+        if (teamLive != null) {
+            val sc = teamLive.score
+            teamSlides += liveSlide(
+                "$pretty  |  LIVE", teamLive.channel, teamLive.programme,
+                "${sc.home}  ${sc.homeScore} - ${sc.awayScore}  ${sc.away}",
+                listOf(sc.league, sc.detail, teamLive.channel.name).filter { it.isNotBlank() }.joinToString("  |  "),
+                SportColors,
+            )
+        } else if (onNow != null) {
+            teamSlides += liveSlide("$pretty  |  ON NOW", onNow.channel, onNow.programme, onNow.programme.title, onNow.channel.name, SportColors)
+        } else if (next != null) {
+            val p = next.programme
+            teamSlides += Spotlight(
+                label = "$pretty  |  NEXT GAME",
+                title = p.title,
+                meta = listOf(teamWhen(p, now), next.channel.name).joinToString("  |  "),
+                description = p.description,
+                bannerUrl = p.iconUrl, posterUrl = next.channel.logoUrl, posterFit = true, progress = null,
+                channel = next.channel, watchLabel = "Remind me", colors = SportColors,
+                onWatch = { extras.onRemind(next) }, onInfo = null,
+            )
+        }
+    }
+
+    val ordered = teamSlides + when (hour) {
         in 17..22 -> sport + favourite + resume + movie + series
         in 5..10 -> resume + favourite + series + movie + sport
         else -> resume + favourite + movie + series + sport
     }
-    val result = ordered.distinctBy { it.title + it.label }.take(5)
+    val result = ordered.distinctBy { it.title }.take(5)
     if (result.isNotEmpty()) return result
     // Nothing special to show: fall back to whatever is on now.
     val ch = channels.firstOrNull { nowFor(it) != null } ?: channels.firstOrNull() ?: return emptyList()
@@ -225,7 +262,7 @@ fun buildSpotlights(
 /** Builds the smart rows: games you can watch now, what you watch most, news. Empty ones are dropped later. */
 fun smartRails(
     channels: List<Channel>,
-    watchCounts: Map<String, Int>,
+    extras: HomeExtras,
     live: List<LiveGame>,
     onPlay: (Channel) -> Unit,
     tile: (Channel) -> HomeTile,
@@ -244,8 +281,24 @@ fun smartRails(
         },
     )
     val byKey = channels.associateBy { it.favKey }
-    val most = watchCounts.entries.filter { it.value >= 2 }.sortedByDescending { it.value }.mapNotNull { byKey[it.key] }.take(12)
+    val most = extras.watchCounts.entries.filter { it.value >= 2 }.sortedByDescending { it.value }.mapNotNull { byKey[it.key] }.take(12)
+    val nowMs = System.currentTimeMillis()
+    val teamRail = Rail(
+        "My Team: " + extras.teamName.split(',').first().trim().replaceFirstChar { it.uppercase() },
+        extras.teamMatches.take(15).map { m ->
+            val p = m.programme
+            val liveNow = p.start <= nowMs
+            HomeTile(
+                id = "team:${m.channel.id}:${p.start}",
+                title = p.title,
+                subtitle = listOf(teamWhen(p, nowMs), m.channel.name, if (liveNow) "" else "Tap for reminder").filter { it.isNotBlank() }.joinToString("  |  "),
+                imageUrl = p.iconUrl ?: m.channel.logoUrl,
+                fit = p.iconUrl == null,
+            ) { if (liveNow) onPlay(m.channel) else extras.onRemind(m) }
+        },
+    )
     return listOf(
+        teamRail,
         liveRail,
         Rail("Most Watched", most.map(tile)),
         Rail("News", channels.filter { it.group.contains("news", ignoreCase = true) }.take(25).map(tile)),
@@ -266,7 +319,7 @@ fun orderRails(rails: List<Rail>, hour: Int): List<Rail> {
         else -> NightOrder
     }
     return rails.withIndex().sortedBy { (i, r) ->
-        val rank = order.indexOf(r.title)
+        val rank = if (r.title.startsWith("My Team")) 1 else order.indexOf(r.title)
         if (rank >= 0) rank else order.size + i
     }.map { it.value }
 }

@@ -498,6 +498,17 @@ private fun ChannelSchedule(
                                 Text("Watch", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.Center))
                             }
                         }
+                        if (!isNow) {
+                            FocusTile(
+                                onClick = { com.skyqlike.iptv.ui.record.remindProgramme(context, channel, show) },
+                                modifier = Modifier.padding(start = 6.dp).width(62.dp).height(52.dp),
+                                corner = 12.dp,
+                                focusedScale = 1.05f,
+                                backgroundColor = Color(0x26FFFFFF),
+                            ) {
+                                Text("Remind", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.Center))
+                            }
+                        }
                         FocusTile(
                             onClick = { com.skyqlike.iptv.ui.record.recordProgramme(context, channel, show) },
                             modifier = Modifier.padding(horizontal = 6.dp).width(70.dp).height(52.dp),

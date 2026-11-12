@@ -1,5 +1,6 @@
 package com.skyqlike.iptv
 
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -58,8 +59,28 @@ import kotlinx.coroutines.launch
 private data class PlayRequest(val items: List<PlayItem>, val start: Int)
 
 class MainActivity : ComponentActivity() {
+
+    /** Set when a reminder alert is tapped: the channel to open once the channel list is ready. */
+    private var pendingPlayKey by androidx.compose.runtime.mutableStateOf<String?>(null)
+
+    private val notifyPermission = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { }
+
+    /** Newer Android versions ask once before an app may show alerts. */
+    fun askNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) notifyPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pendingPlayKey = intent.getStringExtra(com.skyqlike.iptv.data.remind.Reminders.EXTRA_PLAY_KEY)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingPlayKey = intent?.getStringExtra(com.skyqlike.iptv.data.remind.Reminders.EXTRA_PLAY_KEY)
         // Stremio has been removed. Forget anything it saved (sign-in key, addon links, favourites).
         listOf("stremio", "stremio_favourites").forEach {
             getSharedPreferences(it, MODE_PRIVATE).edit().clear().apply()
@@ -112,6 +133,13 @@ class MainActivity : ComponentActivity() {
                 var recordings by remember { mutableStateOf(recStore.all()) }
                 DisposableEffect(Unit) {
                     val stopListening = recStore.observe { recordings = recStore.all() }
+                    onDispose { stopListening() }
+                }
+                // Reminders: "starting soon" alerts, kept on the device like recordings.
+                val reminderStore = remember { com.skyqlike.iptv.data.remind.ReminderStore(applicationContext) }
+                var reminders by remember { mutableStateOf(reminderStore.all()) }
+                DisposableEffect(Unit) {
+                    val stopListening = reminderStore.observe { reminders = reminderStore.all() }
                     onDispose { stopListening() }
                 }
                 var homeMovie by remember { mutableStateOf<com.skyqlike.iptv.data.vod.Movie?>(null) }
@@ -295,11 +323,54 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(channels) {
                     if (!openedOnStart && channels !== sample) {
                         openedOnStart = true
-                        if (settings.openOnLastChannel && playRequest == null) {
+                        if (settings.openOnLastChannel && playRequest == null && pendingPlayKey == null) {
                             val last = recentKeys.firstOrNull()
                             val ch = shownChannels.firstOrNull { it.favKey == last }
                             if (ch != null) playChannel(ch)
                         }
+                    }
+                }
+
+                // My Team: look through the guide for the team's games, and refresh now and then as time passes.
+                var teamTick by remember { mutableIntStateOf(0) }
+                LaunchedEffect(Unit) {
+                    while (true) {
+                        delay(10 * 60_000L)
+                        teamTick++
+                    }
+                }
+                val teamMatches by androidx.compose.runtime.produceState<List<com.skyqlike.iptv.ui.home.TeamMatch>?>(null, epg, shownChannels, settings.myTeam, teamTick) {
+                    value = if (settings.myTeam.isBlank() || epg.isEmpty()) emptyList()
+                    else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                        com.skyqlike.iptv.ui.home.findTeamMatches(settings.myTeam, shownChannels, epg, System.currentTimeMillis())
+                    }
+                }
+                // Set a reminder for each coming game by itself, and tidy away ones that no longer apply.
+                LaunchedEffect(teamMatches, settings.teamReminders, settings.myTeam) {
+                    val found = teamMatches ?: return@LaunchedEffect
+                    val now = System.currentTimeMillis()
+                    val wantAuto = settings.teamReminders && settings.myTeam.isNotBlank()
+                    val wanted = if (wantAuto) found.filter { it.programme.start > now + 2 * 60_000L } else emptyList()
+                    val wantedIds = wanted.map { com.skyqlike.iptv.data.remind.Reminders.idFor(it.programme.title, it.programme.start) }.toSet()
+                    reminderStore.all().filter { it.auto && it.id !in wantedIds }.forEach {
+                        com.skyqlike.iptv.data.remind.Reminders.cancel(this@MainActivity, it.id, byPerson = false)
+                    }
+                    val skipped = reminderStore.skipped()
+                    var added = 0
+                    for (m in wanted.take(30)) {
+                        val id = com.skyqlike.iptv.data.remind.Reminders.idFor(m.programme.title, m.programme.start)
+                        if (id in skipped || reminderStore.get(id) != null) continue
+                        com.skyqlike.iptv.data.remind.Reminders.set(this@MainActivity, m.channel, m.programme, auto = true)
+                        added++
+                    }
+                    if (added > 0) askNotificationPermission()
+                }
+                // Tapping a reminder alert opens the channel.
+                LaunchedEffect(pendingPlayKey, channels) {
+                    val key = pendingPlayKey
+                    if (key != null && channels !== sample) {
+                        shownChannels.firstOrNull { it.favKey == key }?.let { playChannel(it) }
+                        pendingPlayKey = null
                     }
                 }
 
@@ -314,11 +385,14 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-                val homeExtras = remember(liveScores, recentKeys, vod, settings.tmdbKey) {
+                val homeExtras = remember(liveScores, recentKeys, vod, settings.tmdbKey, settings.myTeam, teamMatches) {
                     val ready = vod as? VodState.Ready
                     com.skyqlike.iptv.ui.home.HomeExtras(
                         scores = liveScores,
                         tmdb = tmdbRepo,
+                        teamName = settings.myTeam,
+                        teamMatches = teamMatches.orEmpty(),
+                        onRemind = { m -> com.skyqlike.iptv.ui.record.remindProgramme(this@MainActivity, m.channel, m.programme) },
                         tmdbKey = settings.tmdbKey,
                         watchCounts = historyStore.channelCounts(),
                         movies = ready?.catalog?.movies.orEmpty(),
@@ -369,6 +443,8 @@ class MainActivity : ComponentActivity() {
                         recordingsContent = {
                             com.skyqlike.iptv.ui.record.RecordingsScreen(
                                 recordings = recordings,
+                                reminders = reminders,
+                                onCancelReminder = { com.skyqlike.iptv.data.remind.Reminders.cancel(this@MainActivity, it.id) },
                                 onPlay = { r ->
                                     playRequest = PlayRequest(
                                         listOf(

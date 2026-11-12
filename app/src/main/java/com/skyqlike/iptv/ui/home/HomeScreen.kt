@@ -138,7 +138,7 @@ fun buildHomeRails(
     hour: Int,
 ): List<Rail> {
     val base = buildRails(channels, favouriteKeys, recentKeys, continueWatching, onPlay, onPlayHistory, onToggleFavourite, nowFor)
-    val smart = smartRails(channels, extras.watchCounts, live, onPlay) { ch -> channelTile(ch, nowFor, onPlay, onToggleFavourite) }
+    val smart = smartRails(channels, extras, live, onPlay) { ch -> channelTile(ch, nowFor, onPlay, onToggleFavourite) }
         .filter { it.tiles.isNotEmpty() }
     // "Popular Channels" is only a stand-in until there is enough watching history for "Most Watched".
     val hasMost = smart.any { it.title == "Most Watched" }
@@ -616,6 +616,16 @@ private fun InfoPage(
                         backgroundColor = Color(0x40FFFFFF),
                     ) {
                         Text(if (now != null) "Record" else "Record next", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.Center))
+                    }
+                }
+                if (next != null && next.start > System.currentTimeMillis()) {
+                    FocusTile(
+                        onClick = { com.skyqlike.iptv.ui.record.remindProgramme(recordContext, channel, next) },
+                        modifier = Modifier.width(190.dp).height(46.dp),
+                        corner = 23.dp,
+                        backgroundColor = Color(0x40FFFFFF),
+                    ) {
+                        Text("Remind me next", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.Center))
                     }
                 }
                 FocusTile(

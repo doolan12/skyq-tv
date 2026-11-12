@@ -52,6 +52,8 @@ fun RecordingsScreen(
     onCancel: (Recording) -> Unit,
     onDelete: (Recording) -> Unit,
     compact: Boolean = false,
+    reminders: List<com.skyqlike.iptv.data.remind.Reminder> = emptyList(),
+    onCancelReminder: (com.skyqlike.iptv.data.remind.Reminder) -> Unit = {},
 ) {
     val edge = if (compact) 16.dp else 36.dp
     // Sizes of recordings in progress grow, so look again every few seconds.
@@ -76,7 +78,7 @@ fun RecordingsScreen(
             color = Palette.TextSecondary,
             modifier = Modifier.padding(horizontal = edge, vertical = 4.dp),
         )
-        if (recordings.isEmpty()) {
+        if (recordings.isEmpty() && reminders.isEmpty()) {
             Text(
                 "Nothing recorded yet. Press Record while watching a channel, or choose Record on a show in Match Centre or the TV Guide.",
                 fontSize = 16.sp,
@@ -91,8 +93,41 @@ fun RecordingsScreen(
             ) {
                 group("Recording now", now, tick, dayFormat, compact, "Stop", onPlay = {}, onAction = onStop)
                 group("Planned", planned, tick, dayFormat, compact, "Cancel", onPlay = {}, onAction = onCancel)
+                reminderGroup(reminders, dayFormat, compact, onCancelReminder)
                 group("Saved", saved, tick, dayFormat, compact, "Delete", onPlay = onPlay, onAction = onDelete, confirm = true)
                 group("Couldn't record", failed, tick, dayFormat, compact, "Remove", onPlay = {}, onAction = onDelete)
+            }
+        }
+    }
+}
+
+private fun LazyListScope.reminderGroup(
+    list: List<com.skyqlike.iptv.data.remind.Reminder>,
+    dayFormat: SimpleDateFormat,
+    compact: Boolean,
+    onCancel: (com.skyqlike.iptv.data.remind.Reminder) -> Unit,
+) {
+    if (list.isEmpty()) return
+    item(key = "h:reminders") {
+        Text("Reminders", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary, modifier = Modifier.padding(top = 8.dp))
+    }
+    items(list.sortedBy { it.startMs }, key = { "r:" + it.id }) { r ->
+        Row(Modifier.fillMaxWidth().height(if (compact) 72.dp else 68.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FocusTile(onClick = {}, modifier = Modifier.weight(1f).fillMaxSize(), corner = 12.dp, focusedScale = 1.02f) {
+                Column(Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalArrangement = Arrangement.Center) {
+                    Text(r.title, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        r.channelName + "  |  " + dayFormat.format(Date(r.startMs)) + if (r.auto) "  |  My Team" else "",
+                        fontSize = 12.sp, color = Palette.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            FocusTile(
+                onClick = { onCancel(r) },
+                modifier = Modifier.width(if (compact) 84.dp else 110.dp).fillMaxSize(),
+                corner = 12.dp, focusedScale = 1.05f,
+            ) {
+                Text("Cancel", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary, modifier = Modifier.align(Alignment.Center))
             }
         }
     }

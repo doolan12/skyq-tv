@@ -27,6 +27,10 @@ data class AppSettings(
     val groupOrder: List<String> = emptyList(),
     /** Free key from themoviedb.org, used to fetch posters and banners. Empty means off. */
     val tmdbKey: String = "",
+    /** The team to follow, like "Liverpool". Several names can be separated with commas. */
+    val myTeam: String = "",
+    /** Set a reminder by itself before each game of your team. */
+    val teamReminders: Boolean = true,
 )
 
 /** Saves settings on the device. */
@@ -53,6 +57,8 @@ class SettingsStore(context: Context) {
         hiddenChannels = prefs.getStringSet("hiddenChannels", emptySet())?.toSet() ?: emptySet(),
         groupOrder = readList(prefs.getString("groupOrder", null)),
         tmdbKey = Secure.unlock(prefs.getString("tmdbKey", "") ?: ""),
+        myTeam = prefs.getString("myTeam", "") ?: "",
+        teamReminders = prefs.getBoolean("teamReminders", true),
     )
 
     fun save(s: AppSettings) {
@@ -71,6 +77,8 @@ class SettingsStore(context: Context) {
             .putStringSet("hiddenChannels", s.hiddenChannels)
             .putString("groupOrder", order.toString())
             .putString("tmdbKey", Secure.lock(s.tmdbKey))
+            .putString("myTeam", s.myTeam)
+            .putBoolean("teamReminders", s.teamReminders)
             .apply()
     }
 

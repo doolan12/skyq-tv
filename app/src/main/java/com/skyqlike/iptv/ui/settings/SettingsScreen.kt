@@ -74,6 +74,7 @@ fun SettingsScreen(
         "providers" -> providersContent()
         "playback" -> PlaybackPage(settings, onChange)
         "parental" -> ParentalPage(settings, onChange, adultUnlocked, onAdultUnlockedChange)
+        "team" -> TeamPage(settings, onChange)
         "artwork" -> ArtworkPage(settings, onChange, onTestTmdb)
         "channels" -> ChannelsPage(settings, onChange, allChannels)
         "data" -> DataPage(status, busy, settings, onChange, onRefreshPlaylist, onRefreshGuide, onClearCache, onClearHistory)
@@ -87,6 +88,7 @@ fun SettingsScreen(
             LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 item { SettingRow("IPTV providers", summary = "In use: $providerName") { page = "providers" } }
                 item { SettingRow("Playback", summary = "Picture size, subtitles, audio language, reconnecting") { page = "playback" } }
+                item { SettingRow("My Team", value = settings.myTeam.split(',').first().trim(), summary = "Follow your team: games on the Home page and reminders") { page = "team" } }
                 item { SettingRow("Artwork (TMDB)", value = if (settings.tmdbKey.isBlank()) "Off" else "On", summary = "Posters and banners for movies and shows") { page = "artwork" } }
                 item { SettingRow("Channels", summary = "$visibleCount of ${allChannels.size} channels shown. Hide and reorder.") { page = "channels" } }
                 item { SettingRow("Parental controls", summary = parentalSummary) { page = "parental" } }
@@ -192,6 +194,48 @@ private fun PlaybackPage(settings: AppSettings, onChange: (AppSettings) -> Unit)
                     AudioLanguages[langIndex].second,
                     "Used when a stream offers more than one language.",
                 ) { onChange(settings.copy(audioLang = AudioLanguages[(langIndex + 1) % AudioLanguages.size].first)) }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- my team
+
+@Composable
+private fun TeamPage(settings: AppSettings, onChange: (AppSettings) -> Unit) {
+    var team by remember { mutableStateOf(settings.myTeam) }
+    var saved by remember { mutableStateOf("") }
+    Page("My Team", "Games that name your team in the TV guide show up on the Home page, with a reminder before kick-off.") {
+        LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            item { LabeledField("Team name", team) { team = it } }
+            item {
+                Text(
+                    "Type the name the guide uses, like Liverpool. To follow more than one name, separate them with commas: Liverpool, LFC.",
+                    fontSize = 13.sp, color = Palette.TextSecondary,
+                )
+            }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ActionButton("Save", Modifier.width(120.dp), accent = true) {
+                        onChange(settings.copy(myTeam = team.trim()))
+                        saved = if (team.isBlank()) "My Team is off." else "Saved. Your games will show on Home in a moment."
+                    }
+                    if (settings.myTeam.isNotBlank()) {
+                        ActionButton("Remove", Modifier.width(120.dp)) {
+                            team = ""
+                            onChange(settings.copy(myTeam = ""))
+                            saved = "My Team is off."
+                        }
+                    }
+                }
+            }
+            if (saved.isNotBlank()) item { Text(saved, fontSize = 16.sp, color = Palette.Accent) }
+            item {
+                SettingRow(
+                    "Remind me before every game",
+                    onOff(settings.teamReminders),
+                    "An alert 5 minutes before kick-off. Tap it to open the channel.",
+                ) { onChange(settings.copy(teamReminders = !settings.teamReminders)) }
             }
         }
     }

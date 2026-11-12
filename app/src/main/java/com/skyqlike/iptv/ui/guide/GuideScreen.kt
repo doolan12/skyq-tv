@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
@@ -229,13 +230,14 @@ private fun ProgrammeCell(
     val progress = ((nowMs - programme.start).toFloat() / (programme.stop - programme.start)).coerceIn(0f, 1f)
     val select = { onSelect(Selection(channel, programme)) }
     val context = androidx.compose.ui.platform.LocalContext.current
+    var choose by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
 
     // First press picks the programme (the remote does this just by landing on it).
     // Pressing OK again, or tapping it a second time, starts watching.
     FocusTile(
         onClick = { if (isSelected) onWatch() else select() },
         onFocus = select,
-        onLongClick = { recordProgramme(context, channel, programme) },
+        onLongClick = { if (programme.start > System.currentTimeMillis()) choose = true else recordProgramme(context, channel, programme) },
         modifier = Modifier
             .offset(x = DpPerMinute * startMin)
             .width((DpPerMinute * (endMin - startMin) - 4.dp).coerceAtLeast(16.dp))
@@ -278,6 +280,37 @@ private fun ProgrammeCell(
                     .height(4.dp)
                     .background(Palette.Accent)
             )
+        }
+    }
+
+    if (choose) {
+        val first = androidx.compose.runtime.remember { androidx.compose.ui.focus.FocusRequester() }
+        androidx.compose.runtime.LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+        androidx.compose.ui.window.Dialog(onDismissRequest = { choose = false }) {
+            androidx.compose.foundation.layout.Column(
+                Modifier
+                    .background(Color(0xFF12183A), androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
+                    .padding(20.dp),
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp),
+            ) {
+                Text(programme.title, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text("${channel.name}  |  ${timeFormat.format(Date(programme.start))}", fontSize = 13.sp, color = Palette.TextSecondary)
+                FocusTile(
+                    onClick = { choose = false; com.skyqlike.iptv.ui.record.remindProgramme(context, channel, programme) },
+                    modifier = Modifier.width(260.dp).height(46.dp).focusRequester(first),
+                    corner = 12.dp,
+                ) { Text("Remind me", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary, modifier = Modifier.align(Alignment.Center)) }
+                FocusTile(
+                    onClick = { choose = false; recordProgramme(context, channel, programme) },
+                    modifier = Modifier.width(260.dp).height(46.dp),
+                    corner = 12.dp,
+                ) { Text("Record it", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary, modifier = Modifier.align(Alignment.Center)) }
+                FocusTile(
+                    onClick = { choose = false },
+                    modifier = Modifier.width(260.dp).height(46.dp),
+                    corner = 12.dp,
+                ) { Text("Cancel", fontSize = 16.sp, color = Palette.TextSecondary, modifier = Modifier.align(Alignment.Center)) }
+            }
         }
     }
 }
@@ -346,7 +379,7 @@ private fun InfoPanel(
                     )
                 } else {
                     Text(
-                        if (nowMs < p.start) "Starts at ${timeFormat.format(Date(p.start))}  |  Hold OK to record" else "Finished",
+                        if (nowMs < p.start) "Starts at ${timeFormat.format(Date(p.start))}  |  Hold OK to record or set a reminder" else "Finished",
                         fontSize = 14.sp,
                         color = Palette.TextSecondary,
                     )
