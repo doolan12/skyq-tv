@@ -169,6 +169,27 @@ private fun ReelApp(context: Context) {
     val favStore = remember(profileId) { StremioFavouritesStore(context, profileId) }
     var history by remember(profileId) { mutableStateOf(historyStore.entries()) }
     var favourites by remember(profileId) { mutableStateOf(favStore.all()) }
+    val trakt = remember { com.skyqlike.iptv.data.trakt.TraktClient(context) }
+
+    // Pull from Trakt: add its watchlist to My List and refresh what it says is watched.
+    fun traktPull() {
+        if (!trakt.connected) return
+        scope.launch {
+            val list = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                trakt.syncWatched()
+                trakt.watchlist()
+            }
+            val have = favourites.map { it.type + ":" + it.id }.toSet()
+            val fresh = list.filter { (it.type + ":" + it.imdb) !in have }
+                .map { StremioItem(id = it.imdb, type = it.type, name = it.name) }
+            if (fresh.isNotEmpty()) {
+                favourites = favourites + fresh
+                favStore.save(favourites)
+            }
+            history = historyStore.entries()
+        }
+    }
+    LaunchedEffect(profileId) { traktPull() }
 
     val continueEntries = remember(history) { history.filter { !it.finished && it.positionMs > 10_000 } }
     // Keep the TV home screen's Continue Watching row up to date (only when the player isn't running).
@@ -342,6 +363,7 @@ private fun ReelApp(context: Context) {
                 listOf(title) + favourites
             }
             favStore.save(favourites)
+            if (trakt.connected) scope.launch(kotlinx.coroutines.Dispatchers.IO) { trakt.setOnWatchlist(title.type, title.id, !had) }
             note = if (had) "Removed ${title.name} from My List" else "Added ${title.name} to My List"
         },
         byGenre = { type, genre ->
@@ -560,6 +582,8 @@ private fun ReelApp(context: Context) {
                     history = historyStore.entries()
                     note = "Continue Watching cleared"
                 },
+                trakt = trakt,
+                onTraktConnected = { traktPull() },
                 onSwitchProfile = {
                     resetNavigation()
                     profile = null
@@ -574,9 +598,10 @@ private fun ReelApp(context: Context) {
                 quickPlay = settings.quickPlay || opened.autoPlay || opened.episodeId != null,
                 autoEpisodeId = opened.episodeId,
                 episodeState = { ep ->
-                    history.firstOrNull { it.key == "stremio:series:${opened.item.id}|${ep.id}" }?.let {
+                    val epKey = "stremio:series:${opened.item.id}|${ep.id}"
+                    history.firstOrNull { it.key == epKey }?.let {
                         EpisodeState(it.finished, if (it.durationMs > 0) (it.positionMs.toFloat() / it.durationMs).coerceIn(0f, 1f) else 0f)
-                    }
+                    } ?: if (trakt.isWatched(epKey)) EpisodeState(true, 1f) else null
                 },
                 onOpen = { detail = DetailRequest(it, false) },
                 onBack = { detail = null },
@@ -658,8 +683,12 @@ private fun ReelApp(context: Context) {
                 startIndex = request.start,
                 startPositionFor = { if (settings.resume) historyStore.positionFor(it.key) else 0L },
                 onProgress = { item, position, duration ->
+                    val wasFinished = history.any { it.key == item.key && it.finished }
                     historyStore.update(item, position, duration)
                     history = historyStore.entries()
+                    if (!wasFinished && trakt.connected && history.any { it.key == item.key && it.finished }) {
+                        scope.launch(kotlinx.coroutines.Dispatchers.IO) { trakt.markWatched(item.key) }
+                    }
                 },
                 onClose = { playRequest = null },
                 aspectDefault = settings.aspect,

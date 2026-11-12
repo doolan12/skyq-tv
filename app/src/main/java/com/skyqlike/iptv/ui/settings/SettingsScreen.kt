@@ -69,6 +69,8 @@ fun SettingsScreen(
     streamStats: List<StreamStat>,
     onClearHistory: () -> Unit,
     onSwitchProfile: () -> Unit,
+    trakt: com.skyqlike.iptv.data.trakt.TraktClient,
+    onTraktConnected: () -> Unit,
     onBack: () -> Unit,
 ) {
     var importing by remember { mutableStateOf(false) }
@@ -77,6 +79,10 @@ fun SettingsScreen(
     var page by remember { mutableIntStateOf(0) } // 0 = the list, 1 = account and addons
     BackHandler(enabled = page == 0) { onBack() }
 
+    if (page == 3) {
+        TraktPage(trakt = trakt, onConnected = onTraktConnected, onBack = { page = 0 })
+        return
+    }
     if (page == 2) {
         AddonHealthPage(health = health, streamStats = streamStats, onBack = { page = 0 })
         return
@@ -118,6 +124,9 @@ fun SettingsScreen(
         }
         item {
             SettingRow("Addon health", "${health.count { it.reachable }} of ${health.size} working".takeIf { health.isNotEmpty() } ?: "Not loaded yet") { page = 2 }
+        }
+        item {
+            SettingRow("Trakt", if (trakt.connected) "Connected" + trakt.username.let { if (it.isBlank()) "" else " as $it" } else "Not connected") { page = 3 }
         }
         item {
             SettingRow("Pick the best stream automatically", onOff(settings.quickPlay)) {
@@ -315,5 +324,82 @@ private fun SettingRow(label: String, value: String, modifier: Modifier = Modifi
                 Text(value, fontSize = if (narrow) 14.sp else 16.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
+    }
+}
+
+
+/** Sign in to Trakt with a short code, or sign out. */
+@Composable
+private fun TraktPage(trakt: com.skyqlike.iptv.data.trakt.TraktClient, onConnected: () -> Unit, onBack: () -> Unit) {
+    BackHandler { onBack() }
+    var connected by remember { mutableStateOf(trakt.connected) }
+    var code by remember { mutableStateOf<com.skyqlike.iptv.data.trakt.TraktClient.Code?>(null) }
+    var message by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var attempt by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(attempt) {
+        if (attempt == 0) return@LaunchedEffect
+        busy = true
+        message = ""
+        val got = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { trakt.requestCode() }
+        val c = got.getOrNull()
+        if (c == null) {
+            message = got.exceptionOrNull()?.message ?: "Couldn't reach Trakt."
+            busy = false
+            return@LaunchedEffect
+        }
+        code = c
+        val deadline = System.currentTimeMillis() + c.expiresSec * 1000L
+        while (System.currentTimeMillis() < deadline) {
+            delay(c.intervalSec.coerceAtLeast(3) * 1000L)
+            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { trakt.pollToken(c.deviceCode) }
+            if (result == 1) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { trakt.loadUsername() }
+                connected = true
+                code = null
+                busy = false
+                onConnected()
+                return@LaunchedEffect
+            }
+            if (result == -1) {
+                message = trakt.lastError
+                code = null
+                busy = false
+                return@LaunchedEffect
+            }
+        }
+        message = "The code ran out of time. Try again."
+        code = null
+        busy = false
+    }
+
+    val first = remember { FocusRequester() }
+    LaunchedEffect(Unit) { delay(200); runCatching { first.requestFocus() } }
+
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = com.skyqlike.iptv.ui.common.pagePad(), vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        item { Text("Trakt", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary) }
+        if (connected) {
+            item { Text("Connected${trakt.username.let { if (it.isBlank()) "" else " as $it" }}. Finished movies and episodes are sent to Trakt, and My List matches your Trakt watchlist.", fontSize = 16.sp, color = Palette.TextSecondary) }
+            item { ActionButton("Sign out of Trakt", Modifier.focusRequester(first)) { trakt.disconnect(); connected = false } }
+        } else {
+            val c = code
+            if (c != null) {
+                item { Text("On your phone or computer, go to", fontSize = 16.sp, color = Palette.TextSecondary) }
+                item { Text(c.verifyUrl, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary) }
+                item { Text("and type in this code:", fontSize = 16.sp, color = Palette.TextSecondary) }
+                item { Text(c.userCode, fontSize = 44.sp, fontWeight = FontWeight.Bold, color = Palette.Accent) }
+                item { Text("Waiting for you to finish on Trakt...", fontSize = 15.sp, color = Palette.TextSecondary) }
+            } else {
+                item { Text("Link your Trakt account to keep your watch history and watchlist in step with this app.", fontSize = 16.sp, color = Palette.TextSecondary) }
+            }
+            if (message.isNotBlank()) item { Text(message, fontSize = 15.sp, color = Palette.TextPrimary) }
+            if (!busy) item { ActionButton("Connect Trakt", Modifier.focusRequester(first), accent = true) { attempt++ } }
+        }
+        item { ActionButton("Back") { onBack() } }
     }
 }
