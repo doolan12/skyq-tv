@@ -180,8 +180,15 @@ private fun ReelApp(context: Context) {
                 trakt.watchlist()
             }
             val have = favourites.map { it.type + ":" + it.id }.toSet()
-            val fresh = list.filter { (it.type + ":" + it.imdb) !in have }
-                .map { StremioItem(id = it.imdb, type = it.type, name = it.name) }
+            val addons = (stremioState as? StremioState.Ready)?.home?.addons ?: emptyList()
+            val fresh = kotlinx.coroutines.coroutineScope {
+                list.filter { (it.type + ":" + it.imdb) !in have }.take(40).map { t ->
+                    async {
+                        val bare = StremioItem(id = t.imdb, type = t.type, name = t.name)
+                        if (addons.isEmpty()) bare else runCatching { stremioRepo.details(addons, bare).copy(videos = emptyList()) }.getOrDefault(bare)
+                    }
+                }.map { it.await() }
+            }
             if (fresh.isNotEmpty()) {
                 favourites = favourites + fresh
                 favStore.save(favourites)
@@ -189,7 +196,30 @@ private fun ReelApp(context: Context) {
             history = historyStore.entries()
         }
     }
-    LaunchedEffect(profileId) { traktPull() }
+    LaunchedEffect(profileId, stremioState is StremioState.Ready) { traktPull() }
+
+    // Trakt's "New episodes" and "Recommended" rows for Home.
+    var traktRows by remember { mutableStateOf<List<Pair<String, List<StremioItem>>>>(emptyList()) }
+    var traktRowsStamp by remember { mutableStateOf(0) }
+    val homeReady = stremioState is StremioState.Ready
+    LaunchedEffect(homeReady, traktRowsStamp, profileId) {
+        val ready = stremioState as? StremioState.Ready ?: return@LaunchedEffect
+        if (!trakt.connected) { traktRows = emptyList(); return@LaunchedEffect }
+        val (fresh, picks) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { trakt.newEpisodes() to trakt.recommendations() }
+        val known = (favourites.map { it.type + ":" + it.id } + history.mapNotNull { h ->
+            h.key.removePrefix("stremio:").substringBefore('|').takeIf { it.contains(':') }
+        }).toSet()
+        suspend fun dress(list: List<com.skyqlike.iptv.data.trakt.TraktListItem>): List<StremioItem> =
+            kotlinx.coroutines.coroutineScope {
+                list.take(15).map { t ->
+                    async { runCatching { stremioRepo.details(ready.home.addons, StremioItem(id = t.imdb, type = t.type, name = t.name)) }.getOrNull() }
+                }.mapNotNull { it.await() }.filter { !it.poster.isNullOrBlank() }.map { it.copy(videos = emptyList()) }
+            }
+        val rows = ArrayList<Pair<String, List<StremioItem>>>()
+        dress(fresh).let { if (it.isNotEmpty()) rows += "New episodes of shows you follow" to it }
+        dress(picks.filter { (it.type + ":" + it.imdb) !in known }).let { if (it.isNotEmpty()) rows += "Recommended on Trakt" to it }
+        traktRows = rows
+    }
 
     val continueEntries = remember(history) { history.filter { !it.finished && it.positionMs > 10_000 } }
     // Keep the TV home screen's Continue Watching row up to date (only when the player isn't running).
@@ -583,7 +613,7 @@ private fun ReelApp(context: Context) {
                     note = "Continue Watching cleared"
                 },
                 trakt = trakt,
-                onTraktConnected = { traktPull() },
+                onTraktConnected = { traktPull(); traktRowsStamp++ },
                 onSwitchProfile = {
                     resetNavigation()
                     profile = null
@@ -625,6 +655,7 @@ private fun ReelApp(context: Context) {
                 continueEntries = continueEntries,
                 watched = history,
                 favourites = favourites,
+                extraRows = traktRows,
                 trending = viewTrending,
                 topPostersKey = settings.topPostersKey,
                 actions = actions,

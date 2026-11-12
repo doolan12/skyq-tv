@@ -140,6 +140,8 @@ fun BrowseScreen(
     /** Everything this profile has watched, including finished titles. Used for suggestions. */
     watched: List<HistoryEntry>,
     favourites: List<StremioItem>,
+    /** Extra rows for Home, such as Trakt's "New episodes" and "Recommended on Trakt". */
+    extraRows: List<Pair<String, List<StremioItem>>> = emptyList(),
     trending: Trending?,
     /** The Top Posters key from Settings. Empty means normal posters. */
     topPostersKey: String,
@@ -546,6 +548,7 @@ fun BrowseScreen(
                 }
                 tab == TAB_HOME -> {
                     addContinue(null)
+                    extraRows.forEach { (title, items) -> add(title, items) }
                     addTop10("series")
                     addTop10("movie")
                     addSuggestions()

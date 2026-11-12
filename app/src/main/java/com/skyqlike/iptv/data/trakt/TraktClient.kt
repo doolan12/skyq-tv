@@ -199,6 +199,58 @@ class TraktClient(context: Context) {
         return out
     }
 
+    // ---- Suggestions and new episodes ----
+
+    /** Trakt's picks for you, movies and series taking turns. */
+    fun recommendations(): List<TraktListItem> {
+        fun load(kind: String, type: String): List<TraktListItem> {
+            val out = ArrayList<TraktListItem>()
+            runCatching {
+                val r = authed("GET", "/recommendations/$kind?limit=15")
+                if (r.code in 200..299) {
+                    val a = JSONArray(r.body)
+                    for (i in 0 until a.length()) {
+                        val o = a.getJSONObject(i)
+                        val imdb = o.optJSONObject("ids")?.optString("imdb") ?: continue
+                        if (imdb.startsWith("tt")) out += TraktListItem(type, imdb, o.optString("title"))
+                    }
+                }
+            }
+            return out
+        }
+        val movies = load("movies", "movie")
+        val shows = load("shows", "series")
+        val mixed = ArrayList<TraktListItem>()
+        for (i in 0 until maxOf(movies.size, shows.size)) {
+            shows.getOrNull(i)?.let { mixed += it }
+            movies.getOrNull(i)?.let { mixed += it }
+        }
+        return mixed
+    }
+
+    /** Shows you follow that had an episode come out in the last week (newest first, one per show). */
+    fun newEpisodes(): List<TraktListItem> {
+        val out = LinkedHashMap<String, TraktListItem>()
+        runCatching {
+            val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
+            val start = fmt.format(Date(System.currentTimeMillis() - 7L * 24 * 3600 * 1000))
+            val r = authed("GET", "/calendars/my/shows/$start/8")
+            if (r.code in 200..299) {
+                val iso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
+                val a = JSONArray(r.body)
+                val list = (0 until a.length()).map { a.getJSONObject(it) }.sortedByDescending { it.optString("first_aired") }
+                for (o in list) {
+                    val aired = runCatching { iso.parse(o.optString("first_aired").take(19))?.time }.getOrNull() ?: continue
+                    if (aired > System.currentTimeMillis()) continue
+                    val show = o.optJSONObject("show") ?: continue
+                    val imdb = show.optJSONObject("ids")?.optString("imdb") ?: continue
+                    if (imdb.startsWith("tt") && imdb !in out) out[imdb] = TraktListItem("series", imdb, show.optString("title"))
+                }
+            }
+        }
+        return out.values.toList()
+    }
+
     // ---- Watchlist (My List) ----
 
     fun watchlist(): List<TraktListItem> {
