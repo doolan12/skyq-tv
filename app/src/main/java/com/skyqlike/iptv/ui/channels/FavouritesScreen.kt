@@ -49,7 +49,7 @@ fun FavouritesScreen(
     Column(Modifier.fillMaxSize().padding(top = 20.dp)) {
         Text(title, fontSize = if (compact) 26.sp else 32.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary, modifier = Modifier.padding(horizontal = edge))
         Text(
-            if (favourites.isEmpty()) "" else "${favourites.size} channels. Use the arrows to put them in the order you like.",
+            if (favourites.isEmpty()) "" else (if (favourites.size == 1) "1 channel" else "${favourites.size} channels") + ". Use the arrows to put them in the order you like.",
             fontSize = 13.sp,
             color = Palette.TextSecondary,
             modifier = Modifier.padding(horizontal = edge, vertical = 4.dp),
@@ -73,7 +73,7 @@ fun FavouritesScreen(
                 Row(Modifier.fillMaxWidth().height(if (compact) 64.dp else 68.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FocusTile(onClick = { onPlay(ch) }, modifier = Modifier.weight(1f).fillMaxSize(), corner = 12.dp, focusedScale = 1.02f) {
                         Row(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("${index + 1}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Palette.Accent, modifier = Modifier.width(24.dp))
+                            if (!compact) Text("${index + 1}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Palette.Accent, modifier = Modifier.width(24.dp))
                             Box(Modifier.size(if (compact) 36.dp else 44.dp)) {
                                 Artwork(ch.logoUrl, ch.name, Modifier.fillMaxSize(), ContentScale.Fit)
                             }
@@ -83,11 +83,11 @@ fun FavouritesScreen(
                             }
                         }
                     }
-                    val w = if (compact) 44.dp else 64.dp
+                    val w = if (compact) 38.dp else 64.dp
                     SmallButton("Up", "↑", compact, w, enabled = index > 0) { onMove(ch, FavMove.UP) }
                     SmallButton("Down", "↓", compact, w, enabled = index < favourites.lastIndex) { onMove(ch, FavMove.DOWN) }
                     if (!compact) SmallButton("Top", "Top", false, w, enabled = index > 0) { onMove(ch, FavMove.TOP) }
-                    SmallButton("Remove", "×", compact, if (compact) 44.dp else 100.dp, enabled = true) { onRemove(ch) }
+                    SmallButton("Remove", "×", compact, if (compact) 38.dp else 100.dp, enabled = true) { onRemove(ch) }
                 }
             }
         }

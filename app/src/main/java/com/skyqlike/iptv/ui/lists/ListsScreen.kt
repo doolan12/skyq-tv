@@ -85,7 +85,7 @@ fun ListsScreen(
                     FocusTile(onClick = { openId = l.id }, modifier = Modifier.fillMaxWidth().height(64.dp), corner = 12.dp, focusedScale = 1.02f) {
                         Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(l.name, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text("${l.keys.count { it in byKey }} channels", fontSize = 14.sp, color = Palette.TextSecondary)
+                            Text(l.keys.count { it in byKey }.let { if (it == 1) "1 channel" else "$it channels" }, fontSize = 14.sp, color = Palette.TextSecondary)
                         }
                     }
                 }
@@ -137,9 +137,9 @@ fun ListsScreen(
             return@Column
         }
         Row(Modifier.padding(horizontal = edge, vertical = 12.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button("Add channels", Modifier.width(if (compact) 130.dp else 170.dp), accent = true) { adding = true }
-            Button("Rename", Modifier.width(if (compact) 90.dp else 120.dp)) { renaming = true }
-            Button("Delete list", Modifier.width(if (compact) 100.dp else 140.dp)) {
+            Button("Add channels", Modifier.weight(1.4f), accent = true) { adding = true }
+            Button("Rename", Modifier.weight(1f)) { renaming = true }
+            Button(if (compact) "Delete" else "Delete list", Modifier.weight(1f)) {
                 onChange(lists.filter { it.id != open.id })
                 openId = null
             }
@@ -176,6 +176,6 @@ private fun Button(label: String, modifier: Modifier, enabled: Boolean = true, a
         focusedScale = 1.04f,
         backgroundColor = if (accent) Palette.Accent else Palette.Panel,
     ) {
-        Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = if (enabled) Palette.TextPrimary else androidx.compose.ui.graphics.Color(0x55FFFFFF), modifier = Modifier.align(Alignment.Center))
+        Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = if (enabled) Palette.TextPrimary else androidx.compose.ui.graphics.Color(0x55FFFFFF), modifier = Modifier.align(Alignment.Center), maxLines = 1)
     }
 }

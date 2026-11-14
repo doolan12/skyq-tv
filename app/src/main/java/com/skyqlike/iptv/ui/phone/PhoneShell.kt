@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -98,14 +99,23 @@ fun PhoneShell(
     // Back goes to Home first, so it never throws you out of the app from the middle of a screen.
     BackHandler(enabled = tab != 0) { tab = 0 }
     // Inside a More page, Back returns to the list first.
-    BackHandler(enabled = tab == 4 && morePage >= 0) { morePage = -1 }
+    BackHandler(enabled = tab == 4 && morePage >= 0) { morePage = -1; tab = 0 }
 
-    Column(
+    var railOpen by remember { mutableStateOf(false) }
+    Row(
         Modifier
             .fillMaxSize()
             .background(Brush.verticalGradient(listOf(Color(0xFF14246B), Color(0xFF0B1238), Color(0xFF05060F))))
     ) {
-        Box(Modifier.weight(1f).fillMaxWidth().statusBarsPadding()) {
+        PhoneSidebar(
+            open = railOpen,
+            selected = if (tab < 4) tab else 4 + morePage,
+            onToggle = { railOpen = !railOpen },
+            onPick = { i ->
+                if (i < 4) { tab = i; morePage = -1 } else { tab = 4; morePage = i - 4 }
+            },
+        )
+        Box(Modifier.weight(1f).fillMaxHeight().statusBarsPadding()) {
             when (tab) {
                 0 -> PhoneHome(channels, epg, onPlay, favouriteKeys, recentKeys, continueWatching, onPlayHistory, onToggleFavourite, extraRails, extras)
                 1 -> PhoneGuide(channels, epg, onPlay, favouriteKeys, recentKeys, onToggleFavourite)
@@ -123,32 +133,41 @@ fun PhoneShell(
                 }
             }
         }
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .background(Color(0xFF070B22))
-                .navigationBarsPadding()
-                .height(64.dp)
-        ) {
-            TabNames.forEachIndexed { i, name ->
-                val on = i == tab
-                Column(
-                    Modifier.weight(1f).fillMaxHeight().clickable {
-                        if (i == 4 && tab == 4) morePage = -1
-                        tab = i
-                    },
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    MenuIcon(TabIcons[i], if (on) Palette.Accent else Palette.TextSecondary, 24.dp)
-                    Text(
-                        name,
-                        fontSize = 10.sp,
-                        fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
-                        color = if (on) Palette.Accent else Palette.TextSecondary,
-                        modifier = Modifier.padding(top = 3.dp),
-                    )
-                }
+    }
+}
+
+/** The menu down the left side, like the IPVIO sidebar: icons only, tap the TV badge to show the names. */
+@Composable
+private fun PhoneSidebar(open: Boolean, selected: Int, onToggle: () -> Unit, onPick: (Int) -> Unit) {
+    val entries = TabNames.take(4).zip(TabIcons.take(4)) + MorePages
+    val w by androidx.compose.animation.core.animateDpAsState(if (open) 190.dp else 64.dp, label = "phoneSide")
+    Column(
+        Modifier
+            .width(w)
+            .fillMaxHeight()
+            .background(Color(0xFF05070D))
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .verticalScroll(androidx.compose.foundation.rememberScrollState())
+            .padding(horizontal = 8.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Box(
+            Modifier.padding(start = 2.dp, bottom = 10.dp).size(44.dp)
+                .clip(RoundedCornerShape(13.dp)).background(Palette.Accent).clickable { onToggle() },
+            contentAlignment = Alignment.Center,
+        ) { Text("TV", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color.White) }
+        entries.forEachIndexed { i, (name, icon) ->
+            val on = i == selected
+            Row(
+                Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(12.dp))
+                    .background(if (on) Palette.Accent.copy(alpha = 0.16f) else Color.Transparent)
+                    .clickable { onPick(i) }
+                    .padding(start = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                MenuIcon(icon, if (on) Palette.Accent else Color(0xFFCFCFD6), 24.dp)
+                if (open) Text(name, fontSize = 15.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Medium, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 14.dp))
             }
         }
     }
