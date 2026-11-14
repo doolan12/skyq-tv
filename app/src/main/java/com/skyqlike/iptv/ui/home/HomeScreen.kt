@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
@@ -236,8 +238,8 @@ fun HomeScreen(
         { ch -> epg.nowOn(ch, System.currentTimeMillis()) }
     }
     val expanded = menuFocused || pinned
-    val railWidth by animateDpAsState(if (immersive) 0.dp else 68.dp, label = "rail")
-    val menuWidth by animateDpAsState(if (immersive) 0.dp else if (expanded) 236.dp else 68.dp, label = "menu")
+    val railWidth by animateDpAsState(if (immersive) 0.dp else 76.dp, label = "rail")
+    val menuWidth by animateDpAsState(if (immersive) 0.dp else if (expanded) 256.dp else 76.dp, label = "menu")
     // Deep blue to near-black, in the style of a satellite TV box.
     val background = Brush.verticalGradient(listOf(Color(0xFF14246B), Color(0xFF0B1238), Color(0xFF05060F)))
 
@@ -406,20 +408,26 @@ private fun SideMenu(
     Column(
         modifier
             .fillMaxSize()
-            .background(Color(0xF2050819))
-            .padding(horizontal = 14.dp, vertical = 18.dp),
+            .background(Color(0xFF05070D))
+            .drawBehind {
+                // A thin line down the edge, like the IPVIO sidebar.
+                drawLine(Color(0x1AFFFFFF), androidx.compose.ui.geometry.Offset(size.width - 1f, 0f), androidx.compose.ui.geometry.Offset(size.width - 1f, size.height), 1f)
+            }
+            .padding(horizontal = 14.dp, vertical = 20.dp),
     ) {
-        Text(
-            "TV",
-            color = Palette.Accent,
-            fontSize = 26.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier
-                .padding(start = 12.dp, bottom = 4.dp)
+        Box(
+            Modifier
+                .padding(start = 6.dp, bottom = 18.dp)
+                .size(48.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Palette.Accent)
                 // A tap on the logo opens or closes the menu (for touch screens).
                 .pointerInput(Unit) { detectTapGestures(onTap = { onTogglePin() }) },
-        )
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("TV", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        }
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             items(entries) { entry ->
                 when (entry) {
                     is MenuHeader -> if (expanded) {
@@ -468,37 +476,36 @@ private fun MenuRow(
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
-    FocusTile(
-        onClick = onClick,
-        modifier = modifier.fillMaxWidth().height(52.dp),
-        corner = 16.dp,
-        focusedScale = 1.02f,
-        backgroundColor = if (selected) Color(0x2EFFFFFF) else Color.Transparent,
+    var focused by remember { mutableStateOf(false) }
+    val ink = if (focused) Color(0xFF0B0E17) else if (selected) Palette.Accent else Color(0xFFCFCFD6)
+    Row(
+        modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(
+                when {
+                    focused -> Color.White
+                    selected -> Palette.Accent.copy(alpha = 0.16f)
+                    else -> Color.Transparent
+                }
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(onClick = onClick)
+            .padding(start = if (indent && expanded) 28.dp else 17.dp, end = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            Modifier.fillMaxSize().padding(start = if (indent && expanded) 18.dp else 4.dp, end = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                Modifier
-                    .size(42.dp)
-                    .clip(RoundedCornerShape(13.dp))
-                    .background(if (selected) Palette.Accent else Color(0x14FFFFFF)),
-                contentAlignment = Alignment.Center,
-            ) {
-                MenuIcon(icon, if (selected) Color.White else Color(0xFFB9C2EA), 22.dp)
-            }
-            if (expanded) {
-                Text(
-                    label,
-                    fontSize = 17.sp,
-                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                    color = if (selected) Palette.TextPrimary else Color(0xFFC2C9EE),
-                    maxLines = 1,
-                    modifier = Modifier.padding(start = 14.dp).weight(1f),
-                )
-                if (trailing.isNotEmpty()) Text(trailing, fontSize = 16.sp, color = Color(0xFF8A93BD))
-            }
+        MenuIcon(icon, ink, 26.dp)
+        if (expanded) {
+            Text(
+                label,
+                fontSize = 19.sp,
+                fontWeight = if (selected || focused) FontWeight.Bold else FontWeight.Medium,
+                color = if (focused) Color(0xFF0B0E17) else Color.White,
+                maxLines = 1,
+                modifier = Modifier.padding(start = 18.dp).weight(1f),
+            )
+            if (trailing.isNotEmpty()) Text(trailing, fontSize = 16.sp, color = if (focused) Color(0xFF0B0E17) else Color(0xFF8A93BD))
         }
     }
 }
