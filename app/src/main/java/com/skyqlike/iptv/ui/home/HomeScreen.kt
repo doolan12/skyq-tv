@@ -198,6 +198,7 @@ fun HomeScreen(
             recordingsContent = recordingsContent,
             favouritesContent = favouritesContent,
             listsContent = listsContent,
+            multiViewContent = multiViewContent,
             extraRails = extraRails,
             extras = extras,
         )

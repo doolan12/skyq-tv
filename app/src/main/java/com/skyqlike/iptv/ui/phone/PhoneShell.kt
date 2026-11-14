@@ -65,7 +65,7 @@ private val TabNames = listOf("Home", "Guide", "Sport", "Search", "More")
 private val TabIcons = listOf("home", "guide", "sports", "search", "categories")
 
 /** The pages under the More tab, with the icon shown beside each. */
-private val MorePages = listOf("Movies & Series" to "movies", "Catch Up" to "catchup", "Recordings" to "record", "Favourites" to "star", "My Lists" to "all", "My Library" to "library", "Settings" to "settings")
+private val MorePages = listOf("Movies & Series" to "movies", "Catch Up" to "catchup", "Recordings" to "record", "Multi-view" to "all", "Favourites" to "star", "My Lists" to "all", "My Library" to "library", "Settings" to "settings")
 
 /**
  * The phone layout: one screen at a time with a menu along the bottom.
@@ -90,6 +90,7 @@ fun PhoneShell(
     recordingsContent: @Composable () -> Unit,
     favouritesContent: @Composable () -> Unit,
     listsContent: @Composable () -> Unit = {},
+    multiViewContent: @Composable () -> Unit = {},
     extraRails: List<com.skyqlike.iptv.ui.common.Rail> = emptyList(),
     extras: com.skyqlike.iptv.ui.home.HomeExtras = com.skyqlike.iptv.ui.home.HomeExtras(),
 ) {
@@ -125,10 +126,11 @@ fun PhoneShell(
                     0 -> moviesContent()
                     1 -> catchUpContent()
                     2 -> recordingsContent()
-                    3 -> favouritesContent()
-                    4 -> listsContent()
-                    5 -> libraryContent()
-                    6 -> settingsContent()
+                    3 -> multiViewContent()
+                    4 -> favouritesContent()
+                    5 -> listsContent()
+                    6 -> libraryContent()
+                    7 -> settingsContent()
                     else -> PhoneMore { morePage = it }
                 }
             }
