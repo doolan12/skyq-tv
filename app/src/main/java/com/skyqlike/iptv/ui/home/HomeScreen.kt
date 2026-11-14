@@ -111,7 +111,7 @@ fun buildRails(
             },
         ),
         Rail("On Now", onAir.take(20).map(::tile)),
-        Rail("Favourite Channels", channels.filter { it.favKey in favouriteKeys }.map(::tile)),
+        Rail("Favourite Channels", favouriteKeys.mapNotNull { byKey[it] }.map(::tile)),
         Rail("Recently Watched", recentKeys.mapNotNull { byKey[it] }.map(::tile)),
         Rail("Live Sports", channels.filter { it.group.contains("Sport", ignoreCase = true) }.take(30).map(::tile)),
         Rail("Movie Channels", channels.filter { it.group.contains("Movie", ignoreCase = true) || it.group.contains("Cinema", ignoreCase = true) }.take(30).map(::tile)),
@@ -165,6 +165,7 @@ fun HomeScreen(
     multiViewContent: @Composable () -> Unit = {},
     matchCentreContent: @Composable () -> Unit = {},
     recordingsContent: @Composable () -> Unit = {},
+    favouritesContent: @Composable () -> Unit = {},
     /** Extra rows added under the channel rows (new movies and series). */
     extraRails: List<Rail> = emptyList(),
     extras: HomeExtras = HomeExtras(),
@@ -187,6 +188,7 @@ fun HomeScreen(
             matchCentreContent = matchCentreContent,
             catchUpContent = catchUpContent,
             recordingsContent = recordingsContent,
+            favouritesContent = favouritesContent,
             extraRails = extraRails,
             extras = extras,
         )
@@ -278,13 +280,7 @@ fun HomeScreen(
                 "My Library" -> libraryContent()
                 "Catch Up" -> catchUpContent()
                 "All Channels" -> ChannelBrowser("All Channels", channels, "No channels loaded yet. Add a provider in Settings.", onPlay, onToggleFavourite)
-                "Favourites" -> ChannelBrowser(
-                    "Favourites",
-                    channels.filter { it.favKey in favouriteKeys },
-                    "No favourites yet. While watching a channel, choose Add fav, or hold OK on a channel tile.",
-                    onPlay,
-                    onToggleFavourite,
-                )
+                "Favourites" -> favouritesContent()
                 "Sports" -> categoryPage("Sports", channels, listOf("sport"), onPlay, onToggleFavourite)
                 "Entertainment" -> categoryPage("Entertainment", channels, listOf("entertainment", "general"), onPlay, onToggleFavourite)
                 "Documentaries" -> categoryPage("Documentaries", channels, listOf("documentar", "factual", "nature", "science", "history"), onPlay, onToggleFavourite)

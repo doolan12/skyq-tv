@@ -255,6 +255,26 @@ class MainActivity : ComponentActivity() {
                     if (i >= 0) playRequest = PlayRequest(shownChannels.map { it.toPlayItem() }, i)
                 }
 
+                // Favourites in the order chosen. Playing from here lets channel up/down move through just the favourites.
+                val orderedFavourites = shownChannels.associateBy { it.favKey }.let { byKey -> favourites.mapNotNull { byKey[it] } }
+                val playFavourite: (Channel) -> Unit = { ch ->
+                    val i = orderedFavourites.indexOfFirst { it.id == ch.id }
+                    if (i >= 0) playRequest = PlayRequest(orderedFavourites.map { it.toPlayItem() }, i)
+                }
+                val moveFavourite: (Channel, com.skyqlike.iptv.ui.channels.FavMove) -> Unit = { ch, how ->
+                    val list = favourites.toMutableList()
+                    val i = list.indexOf(ch.favKey)
+                    if (i >= 0) {
+                        when (how) {
+                            com.skyqlike.iptv.ui.channels.FavMove.UP -> if (i > 0) java.util.Collections.swap(list, i, i - 1)
+                            com.skyqlike.iptv.ui.channels.FavMove.DOWN -> if (i < list.lastIndex) java.util.Collections.swap(list, i, i + 1)
+                            com.skyqlike.iptv.ui.channels.FavMove.TOP -> { list.removeAt(i); list.add(0, ch.favKey) }
+                        }
+                        favourites = LinkedHashSet(list)
+                        favStore.save(favourites)
+                    }
+                }
+
                 // Loads the movies and series list the first time it is needed (Movies page or Search).
                 val loadCatalog: () -> Unit = {
                     if (vod is VodState.Idle || vod is VodState.Error) {
@@ -447,6 +467,19 @@ class MainActivity : ComponentActivity() {
                                 recentKeys = recentKeys,
                                 // The little preview stops while the full player is open.
                                 previewEnabled = playRequest == null,
+                            )
+                        },
+                        favouritesContent = {
+                            com.skyqlike.iptv.ui.channels.FavouritesScreen(
+                                favourites = orderedFavourites,
+                                onPlay = playFavourite,
+                                onMove = moveFavourite,
+                                onRemove = { ch ->
+                                    favourites = favourites - ch.favKey
+                                    favStore.save(favourites)
+                                    note = "Removed ${ch.name} from Favourites"
+                                },
+                                compact = phone,
                             )
                         },
                         recordingsContent = {
