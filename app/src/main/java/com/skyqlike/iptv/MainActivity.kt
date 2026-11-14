@@ -417,8 +417,28 @@ class MainActivity : ComponentActivity() {
                         delay(6_000)
                         while (true) {
                             liveScores = runCatching { scoresRepo.load() }.getOrDefault(liveScores)
-                            delay(120_000)
+                            delay(if (settings.myTeam.isNotBlank() && settings.teamAlerts) 60_000L else 120_000L)
                         }
+                    }
+                }
+                // Kick-off, goal and full-time messages for your team.
+                var teamAlert by remember { mutableStateOf<com.skyqlike.iptv.ui.home.TeamAlert?>(null) }
+                val alertTracker = remember { com.skyqlike.iptv.ui.home.TeamAlertTracker() }
+                val alertQueue = remember { kotlinx.coroutines.channels.Channel<Pair<com.skyqlike.iptv.ui.home.TeamAlert, Long>>(kotlinx.coroutines.channels.Channel.UNLIMITED) }
+                LaunchedEffect(liveScores) {
+                    if (!settings.teamAlerts) return@LaunchedEffect
+                    val now = System.currentTimeMillis()
+                    alertTracker.check(liveScores, settings.myTeam).forEach { alertQueue.trySend(it to now) }
+                }
+                // Shows queued messages one at a time, each after the chosen delay.
+                LaunchedEffect(Unit) {
+                    for ((a, seenAt) in alertQueue) {
+                        val wait = seenAt + settings.alertDelaySec * 1000L - System.currentTimeMillis()
+                        if (wait > 0) delay(wait)
+                        if (!settings.teamAlerts) continue
+                        teamAlert = a
+                        delay(9_000)
+                        if (teamAlert === a) teamAlert = null
                     }
                 }
                 val homeExtras = remember(liveScores, recentKeys, vod, settings.tmdbKey, settings.myTeam, teamMatches) {
@@ -766,6 +786,9 @@ class MainActivity : ComponentActivity() {
                             subtitlesOn = settings.subtitlesOn,
                             audioLang = settings.audioLang,
                         )
+                    }
+                    teamAlert?.let { a ->
+                        com.skyqlike.iptv.ui.home.TeamAlertBanner(a, Modifier.align(Alignment.TopCenter))
                     }
                 }
             }

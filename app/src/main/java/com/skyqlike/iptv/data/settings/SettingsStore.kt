@@ -39,6 +39,10 @@ data class AppSettings(
     val autoNext: Boolean = true,
     /** Free key from subdl.com for subtitle search. Empty means off. */
     val subdlKey: String = "",
+    /** A message when your team kicks off, scores or finishes. */
+    val teamAlerts: Boolean = true,
+    /** Seconds to wait before showing the message, because IPTV usually runs 20 to 60 seconds behind the live score. */
+    val alertDelaySec: Int = 30,
 )
 
 /** Saves settings on the device. */
@@ -71,6 +75,8 @@ class SettingsStore(context: Context) {
         autoSkipIntro = prefs.getBoolean("autoSkipIntro", false),
         autoNext = prefs.getBoolean("autoNext", true),
         subdlKey = Secure.unlock(prefs.getString("subdlKey", "") ?: ""),
+        teamAlerts = prefs.getBoolean("teamAlerts", true),
+        alertDelaySec = prefs.getInt("alertDelaySec", 30),
     )
 
     fun save(s: AppSettings) {
@@ -95,6 +101,8 @@ class SettingsStore(context: Context) {
             .putBoolean("autoSkipIntro", s.autoSkipIntro)
             .putBoolean("autoNext", s.autoNext)
             .putString("subdlKey", Secure.lock(s.subdlKey))
+            .putBoolean("teamAlerts", s.teamAlerts)
+            .putInt("alertDelaySec", s.alertDelaySec)
             .apply()
     }
 

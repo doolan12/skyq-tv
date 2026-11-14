@@ -344,7 +344,28 @@ private fun TeamPage(settings: AppSettings, onChange: (AppSettings) -> Unit) {
                     "An alert 5 minutes before kick-off. Tap it to open the channel.",
                 ) { onChange(settings.copy(teamReminders = !settings.teamReminders)) }
             }
-            item { ResetRow { team = ""; onChange(settings.copy(myTeam = "", teamReminders = AppSettings().teamReminders)) } }
+            item {
+                SettingRow(
+                    "Kick-off and goal alerts",
+                    onOff(settings.teamAlerts),
+                    "A message at the top of the screen when your team kicks off, scores or finishes. Works while the app is open.",
+                ) { onChange(settings.copy(teamAlerts = !settings.teamAlerts)) }
+            }
+            item {
+                val choices = listOf(0, 30, 60)
+                SettingRow(
+                    "Alert delay",
+                    if (settings.alertDelaySec == 0) "None" else "${settings.alertDelaySec} sec",
+                    "Waits a little so a goal isn't spoiled while you watch a stream that is behind the live score.",
+                ) { onChange(settings.copy(alertDelaySec = choices[(choices.indexOf(settings.alertDelaySec) + 1).mod(choices.size)])) }
+            }
+            item {
+                ResetRow {
+                    team = ""
+                    val d = AppSettings()
+                    onChange(settings.copy(myTeam = "", teamReminders = d.teamReminders, teamAlerts = d.teamAlerts, alertDelaySec = d.alertDelaySec))
+                }
+            }
         }
     }
 }
