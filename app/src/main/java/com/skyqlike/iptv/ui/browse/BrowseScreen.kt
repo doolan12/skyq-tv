@@ -340,13 +340,16 @@ fun BrowseScreen(
                 else onOpen(item)
             }
             val toggle: (StremioItem) -> Unit = { actions.onToggleFavourite(it) }
+            val trailerFor: (StremioItem) -> (suspend () -> String?) = { item ->
+                { item.trailerId ?: runCatching { actions.loadDetails(item).trailerId }.getOrNull() }
+            }
             val rails = ArrayList<RailSpec>()
 
             // Every title already shown on this screen, so later rows don't repeat it.
             val shownKeys = HashSet<String>()
             fun add(title: String, items: List<StremioItem>, w: Dp = posterW, h: Dp = posterH) {
                 items.forEach { shownKeys += it.type + ":" + it.id }
-                if (items.isNotEmpty()) rails += RailSpec(Rail(title, items.map { tileFor(it, tapOpen, toggle, topPostersKey, onHeroFocus) }), w, h)
+                if (items.isNotEmpty()) rails += RailSpec(Rail(title, items.map { tileFor(it, tapOpen, toggle, topPostersKey, onHeroFocus, trailerFor(it)) }), w, h)
             }
 
             // A numbered row. With a TMDB key it shows what is trending today. Without one it shows the
@@ -360,7 +363,7 @@ fun BrowseScreen(
                 val live = (if (rowType == "movie") trending?.movies else trending?.series).orEmpty().take(10)
                 if (live.size >= 5) {
                     live.forEach { shownKeys += it.type + ":" + it.id }
-                    rails += RailSpec(Rail("Trending $word Today", live.map { tileFor(it, tapOpen, toggle, topPostersKey, onHeroFocus) }), posterW, posterH, top10 = true)
+                    rails += RailSpec(Rail("Trending $word Today", live.map { tileFor(it, tapOpen, toggle, topPostersKey, onHeroFocus, trailerFor(it)) }), posterW, posterH, top10 = true)
                     return
                 }
                 val first = state.home.rows.firstOrNull { it.type == rowType } ?: return
@@ -368,7 +371,7 @@ fun BrowseScreen(
                 if (items.size < 5) return
                 usedForTop10 += first
                 items.forEach { shownKeys += it.type + ":" + it.id }
-                rails += RailSpec(Rail("Popular $word", items.map { tileFor(it, tapOpen, toggle, topPostersKey, onHeroFocus) }), posterW, posterH, top10 = true)
+                rails += RailSpec(Rail("Popular $word", items.map { tileFor(it, tapOpen, toggle, topPostersKey, onHeroFocus, trailerFor(it)) }), posterW, posterH, top10 = true)
             }
 
             fun addContinue(filterType: String?) {
@@ -1031,6 +1034,7 @@ private fun tileFor(
     onFavourite: (StremioItem) -> Unit,
     topPostersKey: String,
     onFocus: (StremioItem) -> Unit,
+    trailer: (suspend () -> String?)? = null,
 ) =
     HomeTile(
         id = item.type + ":" + item.id,
@@ -1039,6 +1043,7 @@ private fun tileFor(
         imageUrl = TopPosters.poster(topPostersKey, item.id, item.poster),
         onLongClick = { onFavourite(item) },
         onFocus = { onFocus(item) },
+        trailer = trailer,
     ) { onOpen(item) }
 
 /**

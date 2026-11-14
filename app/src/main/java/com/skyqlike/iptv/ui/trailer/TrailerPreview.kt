@@ -36,6 +36,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 fun TrailerPreview(
     videoId: String,
     modifier: Modifier = Modifier,
+    /** Fill the whole box (cropping the sides) instead of fitting the video's width. For tall tiles. */
+    cover: Boolean = false,
     onPlaying: () -> Unit,
     onEnded: () -> Unit,
     onFailed: () -> Unit,
@@ -87,7 +89,7 @@ fun TrailerPreview(
 
     // The video is 16:9, so it is drawn at that shape, centred, and the banner's edges trim it to fit.
     BoxWithConstraints(modifier.clipToBounds(), contentAlignment = Alignment.Center) {
-        val w = maxWidth
+        val w = if (cover) maxOf(maxWidth, maxHeight * 16f / 9f) else maxWidth
         AndroidView(
             factory = { ctx ->
                 object : WebView(ctx) {

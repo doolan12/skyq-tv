@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.runtime.setValue
@@ -40,6 +41,13 @@ val LocalSidePad = androidx.compose.runtime.compositionLocalOf { 48.dp }
 
 /** True on a narrow screen such as a phone held upright. */
 @Composable
+fun isTvDevice(): Boolean = androidx.compose.ui.platform.LocalContext.current.let { c ->
+    c.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK) ||
+        (c.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK) ==
+        android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+}
+
+@Composable
 fun isNarrowScreen(): Boolean = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 600
 
 /** The side gap for a whole page: slim on a phone, wide on a TV. */
@@ -59,6 +67,8 @@ data class HomeTile(
     val progressColor: Color = Palette.Accent,
     /** Called when the remote lands on this tile (the Home banner follows it). */
     val onFocus: (() -> Unit)? = null,
+    /** Looks up the YouTube trailer id, so the tile can play it when the remote rests on it (TV only). */
+    val trailer: (suspend () -> String?)? = null,
     val onClick: () -> Unit,
 )
 
@@ -96,10 +106,12 @@ fun RailRow(
                 runCatching { restoreFocus.requestFocus() }
             }
         }
+        // On a TV the focused poster grows a lot, so the row leaves more room above and below.
+        val tvRow = isTvDevice()
         LazyRow(
             state = rowState,
             modifier = Modifier.onFocusChanged { rowFocused = it.hasFocus },
-            contentPadding = PaddingValues(horizontal = LocalSidePad.current, vertical = 14.dp),
+            contentPadding = PaddingValues(horizontal = LocalSidePad.current, vertical = if (tvRow) 48.dp else 14.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             itemsIndexed(rail.tiles, key = { i, t -> "$i|${rail.title}|${t.id}" }) { i, tile ->
@@ -196,9 +208,20 @@ fun PosterTile(
     focusRequester: androidx.compose.ui.focus.FocusRequester? = null,
 ) {
     var tileFocused by remember { mutableStateOf(false) }
+    val tv = isTvDevice()
+    // After a couple of seconds on a poster (TV only), its trailer plays right on the poster.
+    var trailerId by remember(tile.id) { mutableStateOf<String?>(null) }
+    var trailerOn by remember(tile.id) { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(tileFocused, tile.id) {
+        trailerOn = false
+        if (!tv || !tileFocused || tile.trailer == null) { return@LaunchedEffect }
+        kotlinx.coroutines.delay(2000)
+        if (trailerId == null) trailerId = runCatching { tile.trailer.invoke() }.getOrNull()
+    }
     Column(
         Modifier
             .width(tileWidth)
+            .zIndex(if (tileFocused) 1f else 0f)
             .onFocusChanged { tileFocused = it.hasFocus }
             .alpha(if (dimWhenOthersFocused && !tileFocused) 0.6f else 1f),
     ) {
@@ -209,7 +232,7 @@ fun PosterTile(
             modifier = Modifier.fillMaxWidth().height(tileHeight)
                 .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier),
             corner = 6.dp,
-            focusedScale = 1.12f,
+            focusedScale = if (tv) 1.45f else 1.12f,
         ) {
             Box(Modifier.fillMaxSize()) {
                 Artwork(
@@ -217,6 +240,17 @@ fun PosterTile(
                     seed = tile.title,
                     modifier = Modifier.fillMaxSize(),
                 )
+                val vid = trailerId
+                if (tv && tileFocused && vid != null) {
+                    com.skyqlike.iptv.ui.trailer.TrailerPreview(
+                        videoId = vid,
+                        modifier = Modifier.fillMaxSize(),
+                        cover = true,
+                        onPlaying = { trailerOn = true },
+                        onEnded = { trailerId = null },
+                        onFailed = { trailerId = null },
+                    )
+                }
                 val done = tile.progress
                 if (done != null && done > 0f) {
                     Box(
