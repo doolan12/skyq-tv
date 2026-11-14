@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.zIndex
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.runtime.setValue
@@ -69,6 +70,8 @@ data class HomeTile(
     val onFocus: (() -> Unit)? = null,
     /** Looks up the YouTube trailer id, so the tile can play it when the remote rests on it (TV only). */
     val trailer: (suspend () -> String?)? = null,
+    /** On a phone: this is the poster you tapped once (the banner shows it). It grows and plays its trailer. */
+    val selected: Boolean = false,
     val onClick: () -> Unit,
 )
 
@@ -111,7 +114,7 @@ fun RailRow(
         LazyRow(
             state = rowState,
             modifier = Modifier.onFocusChanged { rowFocused = it.hasFocus },
-            contentPadding = PaddingValues(horizontal = LocalSidePad.current, vertical = if (tvRow) 48.dp else 14.dp),
+            contentPadding = PaddingValues(horizontal = LocalSidePad.current, vertical = if (tvRow) 48.dp else 34.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             itemsIndexed(rail.tiles, key = { i, t -> "$i|${rail.title}|${t.id}" }) { i, tile ->
@@ -157,9 +160,10 @@ fun Top10Row(
                 runCatching { restoreFocus.requestFocus() }
             }
         }
+        val tv = isTvDevice()
         LazyRow(
             state = rowState,
-            contentPadding = PaddingValues(horizontal = LocalSidePad.current, vertical = 14.dp),
+            contentPadding = PaddingValues(horizontal = LocalSidePad.current, vertical = if (tv) 48.dp else 34.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             itemsIndexed(tiles.take(10), key = { i, t -> "top10|$i|${t.id}" }) { i, tile ->
@@ -180,17 +184,43 @@ fun Top10Row(
                             ),
                         )
                     }
-                    Box(Modifier.width(tileWidth).height(tileHeight)) {
+                    var topFocused by remember { mutableStateOf(false) }
+                    var topTrailer by remember(tile.id) { mutableStateOf<String?>(null) }
+                    val topActive = if (tv) topFocused else tile.selected
+                    val topGrow by androidx.compose.animation.core.animateFloatAsState(if (!tv && topActive) 1.3f else 1f, label = "topGrow")
+                    androidx.compose.runtime.LaunchedEffect(topActive, tile.id) {
+                        topTrailer = null
+                        if (!topActive || tile.trailer == null) return@LaunchedEffect
+                        kotlinx.coroutines.delay(2000)
+                        topTrailer = runCatching { tile.trailer.invoke() }.getOrNull()
+                    }
+                    Box(
+                        Modifier.width(tileWidth).height(tileHeight)
+                            .zIndex(if (topActive) 1f else 0f)
+                            .onFocusChanged { topFocused = it.hasFocus },
+                    ) {
                         FocusTile(
                             onClick = tile.onClick,
                             onLongClick = tile.onLongClick,
                             onFocus = { tile.onFocus?.invoke(); onTileFocused(tile.id) },
                             modifier = Modifier.fillMaxSize()
+                                .graphicsLayer { scaleX = topGrow; scaleY = topGrow }
                                 .then(if (i == at) Modifier.focusRequester(restoreFocus) else Modifier),
                             corner = 6.dp,
-                            focusedScale = 1.1f,
+                            focusedScale = if (tv) 1.45f else 1.1f,
                         ) {
                             Artwork(url = tile.imageUrl, seed = tile.title, modifier = Modifier.fillMaxSize())
+                            val vid = topTrailer
+                            if (topActive && vid != null) {
+                                com.skyqlike.iptv.ui.trailer.TrailerPreview(
+                                    videoId = vid,
+                                    modifier = Modifier.fillMaxSize(),
+                                    cover = true,
+                                    onPlaying = {},
+                                    onEnded = { topTrailer = null },
+                                    onFailed = { topTrailer = null },
+                                )
+                            }
                         }
                     }
                 }
@@ -212,16 +242,19 @@ fun PosterTile(
     // After a couple of seconds on a poster (TV only), its trailer plays right on the poster.
     var trailerId by remember(tile.id) { mutableStateOf<String?>(null) }
     var trailerOn by remember(tile.id) { mutableStateOf(false) }
-    androidx.compose.runtime.LaunchedEffect(tileFocused, tile.id) {
+    val active = if (tv) tileFocused else tile.selected
+    val grow by androidx.compose.animation.core.animateFloatAsState(if (!tv && active) 1.3f else 1f, label = "grow")
+    androidx.compose.runtime.LaunchedEffect(active, tile.id) {
         trailerOn = false
-        if (!tv || !tileFocused || tile.trailer == null) { return@LaunchedEffect }
+        trailerId = null
+        if (!active || tile.trailer == null) { return@LaunchedEffect }
         kotlinx.coroutines.delay(2000)
         if (trailerId == null) trailerId = runCatching { tile.trailer.invoke() }.getOrNull()
     }
     Column(
         Modifier
             .width(tileWidth)
-            .zIndex(if (tileFocused) 1f else 0f)
+            .zIndex(if (active) 1f else 0f)
             .onFocusChanged { tileFocused = it.hasFocus }
             .alpha(if (dimWhenOthersFocused && !tileFocused) 0.6f else 1f),
     ) {
@@ -230,6 +263,7 @@ fun PosterTile(
             onLongClick = tile.onLongClick,
             onFocus = { tile.onFocus?.invoke() },
             modifier = Modifier.fillMaxWidth().height(tileHeight)
+                .graphicsLayer { scaleX = grow; scaleY = grow }
                 .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier),
             corner = 6.dp,
             focusedScale = if (tv) 1.45f else 1.12f,
@@ -241,7 +275,7 @@ fun PosterTile(
                     modifier = Modifier.fillMaxSize(),
                 )
                 val vid = trailerId
-                if (tv && tileFocused && vid != null) {
+                if (active && vid != null) {
                     com.skyqlike.iptv.ui.trailer.TrailerPreview(
                         videoId = vid,
                         modifier = Modifier.fillMaxSize(),
