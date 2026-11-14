@@ -249,7 +249,16 @@ fun BrowseScreen(
         val id = h.trailerId ?: runCatching { actions.loadDetails(h).trailerId }.getOrNull()
         if (id != null) trailerIds[k] = id else previewFailed += k
     }
-    // The banner stays on the title you're on (or the first suggestion) and plays that title's trailer.
+    // The banner shows the full details of the title you're on: ratings, cast and director come from the addon,
+    // looked up once per title after you rest on it for a moment.
+    val heroDetails = remember { mutableStateMapOf<String, StremioItem>() }
+    LaunchedEffect(heroKey) {
+        val h = heroNow ?: return@LaunchedEffect
+        val k = heroKey ?: return@LaunchedEffect
+        if (k in heroDetails || (h.cast.isNotEmpty() && h.rating.isNotBlank())) return@LaunchedEffect
+        delay(450)
+        runCatching { actions.loadDetails(h) }.getOrNull()?.let { heroDetails[k] = it.copy(videos = emptyList()) }
+    }
 
     // The remote starts on the Play button, like a streaming app.
     LaunchedEffect(ready != null, tab) {
@@ -604,7 +613,17 @@ fun BrowseScreen(
                     else TopBar(tab, selectTab, profile, onSettings, onSwitchProfile, onShuffle, onDownloads)
                     if (showBanner) {
                         val hero = focusedHero?.takeIf { browsing } ?: heroItems[heroIndex.coerceIn(0, heroItems.size - 1)]
-                        InfoStrip(hero, compact = !isTv, onOpen = if (phone) ({ onOpen(hero) }) else null)
+                        val extra = heroDetails[hero.type + ":" + hero.id]
+                        val shownHero = if (extra == null) hero else hero.copy(
+                            description = extra.description.ifBlank { hero.description },
+                            rating = extra.rating.ifBlank { hero.rating },
+                            runtime = extra.runtime.ifBlank { hero.runtime },
+                            year = extra.year.ifBlank { hero.year },
+                            genres = extra.genres.ifEmpty { hero.genres },
+                            cast = extra.cast.ifEmpty { hero.cast },
+                            director = extra.director.ifBlank { hero.director },
+                        )
+                        InfoStrip(shownHero, compact = !isTv, onOpen = if (phone) ({ onOpen(hero) }) else null)
                     }
                 }
             }
@@ -957,7 +976,7 @@ private fun InfoStrip(item: StremioItem, compact: Boolean, onOpen: (() -> Unit)?
     // On a phone the strip is big: it takes over a third of the screen so the whole story can be read,
     // leaving room for just one row of posters underneath.
     val cfg = LocalConfiguration.current
-    val h = if (compact) (cfg.screenHeightDp * (if (cfg.screenHeightDp > cfg.screenWidthDp) 0.36f else 0.42f)).dp else 112.dp
+    val h = if (compact) (cfg.screenHeightDp * (if (cfg.screenHeightDp > cfg.screenWidthDp) 0.36f else 0.42f)).dp else 150.dp
     Column(
         Modifier
             .fillMaxWidth()
@@ -984,6 +1003,24 @@ private fun InfoStrip(item: StremioItem, compact: Boolean, onOpen: (() -> Unit)?
         }
         if (compact && item.genres.isNotEmpty()) {
             Text(item.genres.take(4).joinToString("  •  "), fontSize = 14.sp, color = Color(0xFFD0D0D8), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (item.cast.isNotEmpty()) {
+            Text(
+                "Starring  " + item.cast.take(if (compact) 5 else 4).joinToString(", "),
+                fontSize = if (compact) 14.sp else 13.sp,
+                color = Color(0xFFE6E6EC),
+                maxLines = if (compact) 2 else 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (item.director.isNotBlank()) {
+            Text(
+                (if (item.type == "series") "Created by  " else "Directed by  ") + item.director,
+                fontSize = if (compact) 14.sp else 13.sp,
+                color = Color(0xFFB8B8C2),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
         if (item.description.isNotBlank()) {
             if (compact) {
