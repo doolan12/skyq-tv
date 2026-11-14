@@ -115,6 +115,8 @@ class MainActivity : ComponentActivity() {
                 val subsRepo = remember { com.skyqlike.iptv.data.subs.SubtitleRepository(this@MainActivity) }
                 val catchUpRepo = remember { CatchUpRepository() }
                 val favStore = remember { FavouritesStore(this@MainActivity) }
+                val listsStore = remember { com.skyqlike.iptv.data.lists.ListsStore(this@MainActivity) }
+                var channelLists by remember { mutableStateOf(listsStore.load()) }
                 val settingsStore = remember { SettingsStore(this@MainActivity) }
                 val historyStore = remember { WatchHistoryStore(this@MainActivity) }
                 val sample = remember {
@@ -441,7 +443,7 @@ class MainActivity : ComponentActivity() {
                         if (teamAlert === a) teamAlert = null
                     }
                 }
-                val homeExtras = remember(liveScores, recentKeys, vod, settings.tmdbKey, settings.myTeam, teamMatches) {
+                val homeExtras = remember(liveScores, recentKeys, vod, settings.tmdbKey, settings.myTeam, teamMatches, channelLists, settings.homeOrder, settings.homeHidden) {
                     val ready = vod as? VodState.Ready
                     com.skyqlike.iptv.ui.home.HomeExtras(
                         scores = liveScores,
@@ -455,6 +457,9 @@ class MainActivity : ComponentActivity() {
                         series = ready?.catalog?.series.orEmpty(),
                         onOpenMovie = { homeMovie = it },
                         onOpenSeries = { homeSeries = it },
+                        lists = channelLists,
+                        homeOrder = settings.homeOrder,
+                        homeHidden = settings.homeHidden,
                     )
                 }
 
@@ -494,6 +499,15 @@ class MainActivity : ComponentActivity() {
                                 recentKeys = recentKeys,
                                 // The little preview stops while the full player is open.
                                 previewEnabled = playRequest == null,
+                            )
+                        },
+                        listsContent = {
+                            com.skyqlike.iptv.ui.lists.ListsScreen(
+                                lists = channelLists,
+                                channels = shownChannels,
+                                onChange = { channelLists = it; listsStore.save(it) },
+                                onPlay = { chs, i -> playRequest = PlayRequest(chs.map { it.toPlayItem() }, i) },
+                                compact = phone,
                             )
                         },
                         favouritesContent = {

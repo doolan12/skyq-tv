@@ -33,6 +33,9 @@ data class AppSettings(
     val teamReminders: Boolean = true,
     /** Show a Skip intro button on episodes that have one. */
     val skipIntro: Boolean = true,
+    /** Home page rows in the order the user chose (empty = automatic), and rows they hid. */
+    val homeOrder: List<String> = emptyList(),
+    val homeHidden: Set<String> = emptySet(),
     /** Disk space for pausing and rewinding live TV, in MB. 0 = off. */
     val rewindMb: Int = 0,
     /** Skip intros and recaps by itself. */
@@ -74,6 +77,8 @@ class SettingsStore(context: Context) {
         myTeam = prefs.getString("myTeam", "") ?: "",
         teamReminders = prefs.getBoolean("teamReminders", true),
         skipIntro = prefs.getBoolean("skipIntro", true),
+        homeOrder = readList(prefs.getString("homeOrder", null)),
+        homeHidden = prefs.getStringSet("homeHidden", emptySet())?.toSet() ?: emptySet(),
         rewindMb = prefs.getInt("rewindMb", 0),
         autoSkipIntro = prefs.getBoolean("autoSkipIntro", false),
         autoNext = prefs.getBoolean("autoNext", true),
@@ -101,6 +106,8 @@ class SettingsStore(context: Context) {
             .putString("myTeam", s.myTeam)
             .putBoolean("teamReminders", s.teamReminders)
             .putBoolean("skipIntro", s.skipIntro)
+            .putString("homeOrder", JSONArray(s.homeOrder).toString())
+            .putStringSet("homeHidden", s.homeHidden)
             .putInt("rewindMb", s.rewindMb)
             .putBoolean("autoSkipIntro", s.autoSkipIntro)
             .putBoolean("autoNext", s.autoNext)

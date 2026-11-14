@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -78,6 +79,7 @@ fun SettingsScreen(
         "live" -> LivePage(settings, onChange)
         "parental" -> ParentalPage(settings, onChange, adultUnlocked, onAdultUnlockedChange)
         "team" -> TeamPage(settings, onChange)
+        "homelayout" -> HomeLayoutPage(settings, onChange)
         "artwork" -> ArtworkPage(settings, onChange, onTestTmdb)
         "channels" -> ChannelsPage(settings, onChange, allChannels)
         "data" -> DataPage(status, busy, settings, onChange, onRefreshPlaylist, onRefreshGuide, onClearCache, onClearHistory)
@@ -98,6 +100,7 @@ fun SettingsScreen(
                 item { SettingRow("Sound and subtitles", summary = "Audio language, subtitles") { page = "sound" } }
                 item { SettingRow("Live TV", summary = "Starting channel, rewind, recording") { page = "live" } }
                 item { SectionTitle("Personal") }
+                item { SettingRow("Home page layout", summary = "Put the rows on Home in your own order, or hide ones you don't want") { page = "homelayout" } }
                 item { SettingRow("My Team and alerts", value = settings.myTeam.split(',').first().trim(), summary = "Your team's games, reminders and goal alerts") { page = "team" } }
                 item { SettingRow("Artwork (TMDB)", value = if (settings.tmdbKey.isBlank()) "Off" else "On", summary = "Posters and banners for movies and shows") { page = "artwork" } }
                 item { SettingRow("Parental controls", summary = parentalSummary) { page = "parental" } }
@@ -808,5 +811,48 @@ private fun AboutLine(label: String, value: String) {
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(label, fontSize = 17.sp, color = Palette.TextSecondary, modifier = Modifier.width(190.dp))
         Text(value, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary)
+    }
+}
+
+
+// ---------------------------------------------------------------- home page layout
+
+@Composable
+private fun HomeLayoutPage(settings: AppSettings, onChange: (AppSettings) -> Unit) {
+    // The rows on Home right now, with the person's saved order first.
+    val current = com.skyqlike.iptv.ui.home.HomeLayout.titles
+    val titles = (settings.homeOrder.filter { it in current } + current.filter { it !in settings.homeOrder })
+    fun save(list: List<String>, hidden: Set<String> = settings.homeHidden) = onChange(settings.copy(homeOrder = list, homeHidden = hidden))
+    Page("Home page layout", "Choose the order of the rows on Home. Open Home once first so every row is listed.") {
+        LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (titles.isEmpty()) {
+                item { Text("Nothing to arrange yet. Open the Home page first, then come back.", fontSize = 15.sp, color = Palette.TextSecondary) }
+            }
+            itemsIndexed(titles, key = { _, t -> t }) { i, t ->
+                val hidden = t in settings.homeHidden
+                Row(Modifier.fillMaxWidth().height(56.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(Modifier.weight(1f).fillMaxSize().padding(start = 8.dp), contentAlignment = Alignment.CenterStart) {
+                        Text("${i + 1}.  $t" + if (hidden) "   (hidden)" else "", fontSize = 17.sp, color = if (hidden) Palette.TextSecondary else Palette.TextPrimary, maxLines = 1)
+                    }
+                    HomeBtn("Up", 80.dp, i > 0) {
+                        val l = titles.toMutableList(); l.add(i - 1, l.removeAt(i)); save(l)
+                    }
+                    HomeBtn("Down", 90.dp, i < titles.lastIndex) {
+                        val l = titles.toMutableList(); l.add(i + 1, l.removeAt(i)); save(l)
+                    }
+                    HomeBtn(if (hidden) "Show" else "Hide", 90.dp, true) {
+                        save(titles, if (hidden) settings.homeHidden - t else settings.homeHidden + t)
+                    }
+                }
+            }
+            item { ResetRow { onChange(settings.copy(homeOrder = emptyList(), homeHidden = emptySet())) } }
+        }
+    }
+}
+
+@Composable
+private fun HomeBtn(label: String, width: androidx.compose.ui.unit.Dp, enabled: Boolean, onClick: () -> Unit) {
+    com.skyqlike.iptv.ui.home.FocusTile(onClick = { if (enabled) onClick() }, modifier = Modifier.width(width).fillMaxSize(), corner = 12.dp, focusedScale = 1.05f) {
+        Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = if (enabled) Palette.TextPrimary else Color(0x55FFFFFF), modifier = Modifier.align(Alignment.Center))
     }
 }

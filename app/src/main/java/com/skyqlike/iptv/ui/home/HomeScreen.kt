@@ -144,8 +144,13 @@ fun buildHomeRails(
         .filter { it.tiles.isNotEmpty() }
     // "Popular Channels" is only a stand-in until there is enough watching history for "Most Watched".
     val hasMost = smart.any { it.title == "Most Watched" }
-    val all = base.filter { !(hasMost && it.title == "Popular Channels") } + smart + extraRails
-    return orderRails(all, hour)
+    val byKey = channels.associateBy { it.favKey }
+    val listRails = extras.lists.mapNotNull { l ->
+        val tiles = l.keys.mapNotNull { byKey[it] }.map { ch -> channelTile(ch, nowFor, onPlay, onToggleFavourite) }
+        if (tiles.isEmpty()) null else Rail(l.name, tiles)
+    }
+    val all = base.filter { !(hasMost && it.title == "Popular Channels") } + smart + listRails + extraRails
+    return orderRails(all, hour, extras.homeOrder, extras.homeHidden)
 }
 
 @Composable
@@ -168,6 +173,7 @@ fun HomeScreen(
     matchCentreContent: @Composable () -> Unit = {},
     recordingsContent: @Composable () -> Unit = {},
     favouritesContent: @Composable () -> Unit = {},
+    listsContent: @Composable () -> Unit = {},
     /** Extra rows added under the channel rows (new movies and series). */
     extraRails: List<Rail> = emptyList(),
     extras: HomeExtras = HomeExtras(),
@@ -191,6 +197,7 @@ fun HomeScreen(
             catchUpContent = catchUpContent,
             recordingsContent = recordingsContent,
             favouritesContent = favouritesContent,
+            listsContent = listsContent,
             extraRails = extraRails,
             extras = extras,
         )
@@ -254,7 +261,7 @@ fun HomeScreen(
                 "Home" -> {
                     val hour = remember(minute) { java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) }
                     val live = remember(extras.scores, channels, nowFor) { liveGames(extras.scores, channels, nowFor) }
-                    val rails = remember(channels, favouriteKeys, recentKeys, continueWatching, onToggleFavourite, nowFor, extraRails, extras, live, hour) {
+                    val rails = remember(channels, favouriteKeys, recentKeys, continueWatching, onToggleFavourite, nowFor, extraRails, extras, live, hour, extras.lists, extras.homeOrder, extras.homeHidden) {
                         buildHomeRails(channels, favouriteKeys, recentKeys, continueWatching, onPlay, onPlayHistory, onToggleFavourite, nowFor, extras, live, extraRails, hour)
                     }
                     val featured = remember(channels, favouriteKeys, nowFor) {
@@ -283,6 +290,7 @@ fun HomeScreen(
                 "Catch Up" -> catchUpContent()
                 "All Channels" -> ChannelBrowser("All Channels", channels, "No channels loaded yet. Add a provider in Settings.", onPlay, onToggleFavourite)
                 "Favourites" -> favouritesContent()
+                "My Lists" -> listsContent()
                 "Sports" -> categoryPage("Sports", channels, listOf("sport"), onPlay, onToggleFavourite)
                 "Entertainment" -> categoryPage("Entertainment", channels, listOf("entertainment", "general"), onPlay, onToggleFavourite)
                 "Documentaries" -> categoryPage("Documentaries", channels, listOf("documentar", "factual", "nature", "science", "history"), onPlay, onToggleFavourite)
@@ -388,6 +396,7 @@ private fun menuEntries(categoriesOpen: Boolean): List<MenuEntry> = buildList {
     if (categoriesOpen) addAll(CategoryLinks)
     add(MenuHeader("MY STUFF"))
     add(MenuLink("Favourites", "star"))
+    add(MenuLink("My Lists", "all"))
     add(MenuLink("Settings", "settings"))
 }
 

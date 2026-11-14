@@ -68,7 +68,17 @@ class HomeExtras(
     val teamName: String = "",
     val teamMatches: List<TeamMatch> = emptyList(),
     val onRemind: (TeamMatch) -> Unit = {},
+    /** The person's own channel lists, shown as rows. */
+    val lists: List<com.skyqlike.iptv.data.lists.ChannelList> = emptyList(),
+    /** Home rows in the person's chosen order (empty = automatic) and the ones they hid. */
+    val homeOrder: List<String> = emptyList(),
+    val homeHidden: Set<String> = emptySet(),
 )
+
+/** The titles of the rows on Home right now, so Settings can list them for reordering. */
+object HomeLayout {
+    @Volatile var titles: List<String> = emptyList()
+}
 
 /** A game that is on right now, with the channel and show carrying it. */
 class LiveGame(val score: Score, val channel: Channel, val programme: Programme)
@@ -311,17 +321,22 @@ private val DayOrder = listOf("Continue Watching", "On Now", "Favourite Channels
 private val NightOrder = listOf("Continue Watching", "Movie Channels", "New Movies", "New TV Series", "Favourite Channels", "On Now", "Most Watched")
 
 /** Puts the rows in the order that suits the time of day. Rows not named keep their usual order, after the named ones. */
-fun orderRails(rails: List<Rail>, hour: Int): List<Rail> {
+fun orderRails(rails: List<Rail>, hour: Int, custom: List<String> = emptyList(), hidden: Set<String> = emptySet()): List<Rail> {
     val order = when (hour) {
         in 5..10 -> MorningOrder
         in 11..16 -> DayOrder
         in 17..22 -> EveningOrder
         else -> NightOrder
     }
-    return rails.withIndex().sortedBy { (i, r) ->
+    val timed = rails.withIndex().sortedBy { (i, r) ->
         val rank = if (r.title.startsWith("My Team")) 1 else order.indexOf(r.title)
         if (rank >= 0) rank else order.size + i
     }.map { it.value }
+    HomeLayout.titles = timed.map { it.title }
+    val shown = timed.filter { it.title !in hidden }
+    if (custom.isEmpty()) return shown
+    // The person's order wins; rows they haven't placed yet keep the time-of-day order after theirs.
+    return shown.sortedBy { r -> custom.indexOf(r.title).let { if (it >= 0) it else Int.MAX_VALUE } }
 }
 
 /**

@@ -41,11 +41,13 @@ fun FavouritesScreen(
     onMove: (Channel, FavMove) -> Unit,
     onRemove: (Channel) -> Unit,
     compact: Boolean = false,
+    title: String = "Favourites",
+    emptyText: String = "No favourites yet. While watching a channel, choose Add fav, or hold OK on a channel tile (press and hold on a phone).",
 ) {
     val edge = if (compact) 16.dp else 36.dp
     val nowFor = LocalNowOn.current
     Column(Modifier.fillMaxSize().padding(top = 20.dp)) {
-        Text("Favourites", fontSize = if (compact) 26.sp else 32.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary, modifier = Modifier.padding(horizontal = edge))
+        Text(title, fontSize = if (compact) 26.sp else 32.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary, modifier = Modifier.padding(horizontal = edge))
         Text(
             if (favourites.isEmpty()) "" else "${favourites.size} channels. Use the arrows to put them in the order you like.",
             fontSize = 13.sp,
@@ -54,7 +56,7 @@ fun FavouritesScreen(
         )
         if (favourites.isEmpty()) {
             Text(
-                "No favourites yet. While watching a channel, choose Add fav, or hold OK on a channel tile (press and hold on a phone).",
+                emptyText,
                 fontSize = 16.sp,
                 color = Palette.TextSecondary,
                 modifier = Modifier.padding(edge),
