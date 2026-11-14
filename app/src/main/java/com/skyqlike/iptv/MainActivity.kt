@@ -112,6 +112,7 @@ class MainActivity : ComponentActivity() {
                 val vodRepo = remember { VodRepository() }
                 val scoresRepo = remember { com.skyqlike.iptv.data.scores.ScoresRepository() }
                 val tmdbRepo = remember { com.skyqlike.iptv.data.tmdb.TmdbRepository(this@MainActivity) }
+                val subsRepo = remember { com.skyqlike.iptv.data.subs.SubtitleRepository(this@MainActivity) }
                 val catchUpRepo = remember { CatchUpRepository() }
                 val favStore = remember { FavouritesStore(this@MainActivity) }
                 val settingsStore = remember { SettingsStore(this@MainActivity) }
@@ -298,6 +299,8 @@ class MainActivity : ComponentActivity() {
                                 url = m.streamUrl,
                                 kind = PlayKind.MOVIE,
                                 imageUrl = m.posterUrl,
+                                seriesName = m.name,
+                                year = m.year,
                             )
                         ),
                         0,
@@ -314,6 +317,10 @@ class MainActivity : ComponentActivity() {
                                 url = ep.streamUrl,
                                 kind = PlayKind.EPISODE,
                                 imageUrl = ep.imageUrl ?: series.coverUrl,
+                                seriesName = series.name,
+                                season = ep.season,
+                                episode = ep.number,
+                                year = series.year,
                             )
                         },
                         start,
@@ -714,6 +721,28 @@ class MainActivity : ComponentActivity() {
                             epg = epg,
                             favouriteKeys = favourites,
                             startPositionFor = { if (settings.resume) historyStore.positionFor(it.key) else 0L },
+                            extras = com.skyqlike.iptv.ui.player.PlayerExtras(
+                                skipIntro = settings.skipIntro,
+                                autoSkipIntro = settings.autoSkipIntro,
+                                autoNext = settings.autoNext,
+                                segments = { item, durationMs ->
+                                    val name = item.seriesName
+                                    if (item.kind != PlayKind.EPISODE || name == null || item.season <= 0 || settings.tmdbKey.isBlank()) emptyList()
+                                    else {
+                                        val id = tmdbRepo.lookup(settings.tmdbKey, name, item.year, com.skyqlike.iptv.data.tmdb.ArtKind.TV, needId = true)?.id ?: 0
+                                        com.skyqlike.iptv.data.intro.IntroRepository.segments(id, item.season, item.episode, durationMs)
+                                    }
+                                },
+                                subtitleSearchOn = settings.subdlKey.isNotBlank(),
+                                searchSubtitles = { item ->
+                                    subsRepo.search(
+                                        settings.subdlKey, item.seriesName ?: item.title, item.year, item.season, item.episode,
+                                        settings.audioLang.ifBlank { "en" },
+                                    )
+                                },
+                                downloadSubtitle = { item, result -> subsRepo.download(item.key, result) },
+                                savedSubtitle = { item -> subsRepo.saved(item.key) },
+                            ),
                             onToggleFavourite = { item ->
                                 val key = item.favKey
                                 if (key != null) {

@@ -26,6 +26,11 @@ data class PlayItem(
     val epgId: String? = null,
     val favKey: String? = null,
     val imageUrl: String? = null,
+    /** For episodes and movies: used to look up skip-intro times and subtitles. */
+    val seriesName: String? = null,
+    val season: Int = 0,
+    val episode: Int = 0,
+    val year: String? = null,
 )
 
 /** The key used to remember a favourite channel (name plus stream address, so it's unique). */

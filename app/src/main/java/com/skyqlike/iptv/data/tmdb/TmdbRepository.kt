@@ -10,7 +10,7 @@ import java.net.URL
 import java.net.URLEncoder
 
 /** Pictures and a short description for one movie or show, from The Movie Database (TMDB). */
-class TmdbArt(val poster: String?, val backdrop: String?, val overview: String?)
+class TmdbArt(val poster: String?, val backdrop: String?, val overview: String?, val id: Int = 0)
 
 /** What we are looking for. ANY is for live TV shows, where we don't know if it's a film or a series. */
 enum class ArtKind { MOVIE, TV, ANY }
@@ -22,7 +22,7 @@ enum class ArtKind { MOVIE, TV, ANY }
 class TmdbRepository(context: Context) {
     private val prefs = context.getSharedPreferences("tmdb_cache", Context.MODE_PRIVATE)
 
-    suspend fun lookup(key: String, title: String, year: String? = null, kind: ArtKind = ArtKind.ANY): TmdbArt? =
+    suspend fun lookup(key: String, title: String, year: String? = null, kind: ArtKind = ArtKind.ANY, needId: Boolean = false): TmdbArt? =
         withContext(Dispatchers.IO) {
             if (key.isBlank()) return@withContext null
             val clean = cleanTitle(title)
@@ -34,12 +34,15 @@ class TmdbRepository(context: Context) {
                     val at = saved.drop(1).toLongOrNull() ?: 0L
                     if (System.currentTimeMillis() - at < WEEK_MS) return@withContext null
                 } else {
-                    return@withContext try {
+                    val cachedArt = try {
                         val o = JSONObject(saved)
-                        TmdbArt(o.optString("p").ifBlank { null }, o.optString("b").ifBlank { null }, o.optString("o").ifBlank { null })
+                        TmdbArt(o.optString("p").ifBlank { null }, o.optString("b").ifBlank { null }, o.optString("o").ifBlank { null }, o.optInt("i", 0))
                     } catch (e: Exception) {
                         null
                     }
+                    // Older saved answers have no id. Ask again when the id is needed.
+                    if (cachedArt != null && (!needId || cachedArt.id > 0)) return@withContext cachedArt
+                    if (cachedArt == null) return@withContext null
                 }
             }
             val art = try {
@@ -49,7 +52,7 @@ class TmdbRepository(context: Context) {
             }
             if (prefs.all.size > 900) prefs.edit().clear().apply()
             val value = if (art == null) "-${System.currentTimeMillis()}" else JSONObject()
-                .put("p", art.poster.orEmpty()).put("b", art.backdrop.orEmpty()).put("o", art.overview.orEmpty()).toString()
+                .put("p", art.poster.orEmpty()).put("b", art.backdrop.orEmpty()).put("o", art.overview.orEmpty()).put("i", art.id).toString()
             prefs.edit().putString(ck, value).apply()
             art
         }
@@ -112,6 +115,7 @@ class TmdbRepository(context: Context) {
                 poster = poster?.let { "https://image.tmdb.org/t/p/w500$it" },
                 backdrop = backdrop?.let { "https://image.tmdb.org/t/p/w1280$it" },
                 overview = r.optString("overview").ifBlank { null },
+                id = r.optInt("id", 0),
             )
         }
         return null

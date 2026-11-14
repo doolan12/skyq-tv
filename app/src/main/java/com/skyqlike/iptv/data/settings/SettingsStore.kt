@@ -31,6 +31,14 @@ data class AppSettings(
     val myTeam: String = "",
     /** Set a reminder by itself before each game of your team. */
     val teamReminders: Boolean = true,
+    /** Show a Skip intro button on episodes that have one. */
+    val skipIntro: Boolean = true,
+    /** Skip intros and recaps by itself. */
+    val autoSkipIntro: Boolean = false,
+    /** Start the next episode when one ends. */
+    val autoNext: Boolean = true,
+    /** Free key from subdl.com for subtitle search. Empty means off. */
+    val subdlKey: String = "",
 )
 
 /** Saves settings on the device. */
@@ -59,6 +67,10 @@ class SettingsStore(context: Context) {
         tmdbKey = Secure.unlock(prefs.getString("tmdbKey", "") ?: ""),
         myTeam = prefs.getString("myTeam", "") ?: "",
         teamReminders = prefs.getBoolean("teamReminders", true),
+        skipIntro = prefs.getBoolean("skipIntro", true),
+        autoSkipIntro = prefs.getBoolean("autoSkipIntro", false),
+        autoNext = prefs.getBoolean("autoNext", true),
+        subdlKey = Secure.unlock(prefs.getString("subdlKey", "") ?: ""),
     )
 
     fun save(s: AppSettings) {
@@ -79,6 +91,10 @@ class SettingsStore(context: Context) {
             .putString("tmdbKey", Secure.lock(s.tmdbKey))
             .putString("myTeam", s.myTeam)
             .putBoolean("teamReminders", s.teamReminders)
+            .putBoolean("skipIntro", s.skipIntro)
+            .putBoolean("autoSkipIntro", s.autoSkipIntro)
+            .putBoolean("autoNext", s.autoNext)
+            .putString("subdlKey", Secure.lock(s.subdlKey))
             .apply()
     }
 

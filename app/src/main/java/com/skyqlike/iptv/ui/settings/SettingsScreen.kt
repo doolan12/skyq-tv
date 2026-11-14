@@ -218,7 +218,26 @@ private fun PlayerPage(settings: AppSettings, onChange: (AppSettings) -> Unit) {
                     onChange(settings.copy(resume = !settings.resume))
                 }
             }
-            item { ResetRow { onChange(settings.copy(aspect = d.aspect, autoReconnect = d.autoReconnect, resume = d.resume)) } }
+            item {
+                SettingRow("Play next episode automatically", onOff(settings.autoNext), "When an episode ends, start the next one.") {
+                    onChange(settings.copy(autoNext = !settings.autoNext))
+                }
+            }
+            item {
+                SettingRow("Skip intro button", onOff(settings.skipIntro), "Shows Skip intro, Skip recap and Next episode where the times are known. Needs your TMDB key (Artwork).") {
+                    onChange(settings.copy(skipIntro = !settings.skipIntro))
+                }
+            }
+            item {
+                SettingRow("Skip intros automatically", onOff(settings.autoSkipIntro), "Jumps past intros and recaps by itself, without pressing anything.") {
+                    onChange(settings.copy(autoSkipIntro = !settings.autoSkipIntro))
+                }
+            }
+            item {
+                ResetRow {
+                    onChange(settings.copy(aspect = d.aspect, autoReconnect = d.autoReconnect, resume = d.resume, autoNext = d.autoNext, skipIntro = d.skipIntro, autoSkipIntro = d.autoSkipIntro))
+                }
+            }
         }
     }
 }
@@ -240,6 +259,32 @@ private fun SoundPage(settings: AppSettings, onChange: (AppSettings) -> Unit) {
                     AudioLanguages[langIndex].second,
                     "Used when a stream offers more than one language.",
                 ) { onChange(settings.copy(audioLang = AudioLanguages[(langIndex + 1) % AudioLanguages.size].first)) }
+            }
+            item {
+                var key by remember { mutableStateOf(settings.subdlKey) }
+                var saved by remember { mutableStateOf("") }
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Subtitle search", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary)
+                    Text(
+                        "Find subtitles online while watching a movie or episode (Subtitles, then Search online). Needs a free key from subdl.com. The key stays on this device.",
+                        fontSize = 13.sp, color = Palette.TextSecondary,
+                    )
+                    LabeledField("SubDL key", key) { key = it.trim() }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ActionButton("Save", Modifier.width(120.dp), accent = true) {
+                            onChange(settings.copy(subdlKey = key))
+                            saved = if (key.isBlank()) "Subtitle search is off." else "Saved."
+                        }
+                        if (key.isNotEmpty()) {
+                            ActionButton("Remove", Modifier.width(120.dp)) {
+                                key = ""
+                                onChange(settings.copy(subdlKey = ""))
+                                saved = "Subtitle search is off."
+                            }
+                        }
+                    }
+                    if (saved.isNotBlank()) Text(saved, fontSize = 15.sp, color = Palette.Accent)
+                }
             }
             item { ResetRow { onChange(settings.copy(subtitlesOn = d.subtitlesOn, audioLang = d.audioLang)) } }
         }

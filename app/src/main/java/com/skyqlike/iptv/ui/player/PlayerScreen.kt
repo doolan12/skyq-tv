@@ -69,6 +69,10 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
+import com.skyqlike.iptv.data.intro.Segment
+import com.skyqlike.iptv.data.intro.SegmentKind
+import com.skyqlike.iptv.data.subs.SubResult
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
@@ -172,6 +176,7 @@ fun PlayerScreen(
     autoReconnect: Boolean = true,
     subtitlesOn: Boolean = false,
     audioLang: String = "",
+    extras: PlayerExtras = PlayerExtras(),
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -420,7 +425,11 @@ fun PlayerScreen(
         positionMs = 0L
         durationMs = 0L
         playingUrl[0] = com.skyqlike.iptv.data.provider.HostFailover.candidates(cur.url).first()
-        val mediaItem = MediaItem.fromUri(playingUrl[0])
+        val savedSub = if (cur.kind == PlayKind.MOVIE || cur.kind == PlayKind.EPISODE) extras.savedSubtitle(cur) else null
+        if (savedSub != null) {
+            exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).build()
+        }
+        val mediaItem = subtitleItem(playingUrl[0], savedSub)
         val resumeAt = if (cur.kind == PlayKind.MOVIE || cur.kind == PlayKind.EPISODE) startPositionFor(cur) else 0L
         if (resumeAt > 0L) exo.setMediaItem(mediaItem, resumeAt) else exo.setMediaItem(mediaItem)
         exo.prepare()
@@ -525,12 +534,56 @@ fun PlayerScreen(
         if (exo.playWhenReady) exo.pause() else exo.play()
     }
 
+    // Skip intro, recap and credits, for episodes where TheIntroDB knows the times.
+    var segments by remember(index) { mutableStateOf<List<Segment>>(emptyList()) }
+    LaunchedEffect(index, durationMs > 0L, extras.skipIntro) {
+        val cur = items[index]
+        if (cur.kind == PlayKind.EPISODE && extras.skipIntro && durationMs > 0L && segments.isEmpty()) {
+            segments = runCatching { extras.segments(cur, durationMs) }.getOrDefault(emptyList())
+        }
+    }
+    val activeSeg = if (item.kind == PlayKind.EPISODE) segments.firstOrNull { positionMs >= it.startMs && positionMs < it.endMs - 1_000L } else null
+    val skipLabel = when (activeSeg?.kind) {
+        SegmentKind.INTRO -> "Skip intro"
+        SegmentKind.RECAP -> "Skip recap"
+        SegmentKind.CREDITS -> if (index < items.lastIndex) "Next episode" else null
+        null -> null
+    }
+    fun doSkip() {
+        val s = activeSeg ?: return
+        if (s.kind == SegmentKind.CREDITS) {
+            if (index < items.lastIndex) step(1) else exo.seekTo(s.endMs)
+        } else {
+            exo.seekTo(s.endMs)
+        }
+    }
+    LaunchedEffect(activeSeg?.startMs, activeSeg?.kind, extras.autoSkipIntro) {
+        val s = activeSeg
+        if (extras.autoSkipIntro && s != null && s.kind != SegmentKind.CREDITS) {
+            delay(1_500)
+            if (exo.currentPosition < s.endMs) exo.seekTo(s.endMs)
+        }
+    }
+
+    // Subtitles found online (SubDL): the list on offer, and putting the chosen one on the picture.
+    var subMode by remember { mutableStateOf(false) }
+    var subBusy by remember { mutableStateOf(false) }
+    var subResults by remember { mutableStateOf<List<SubResult>>(emptyList()) }
+    var subMessage by remember { mutableStateOf("") }
+    fun attachSubtitle(file: java.io.File) {
+        val pos = exo.currentPosition
+        exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).build()
+        exo.setMediaItem(subtitleItem(playingUrl[0].ifBlank { items[index].url }, file), pos)
+        exo.prepare()
+        exo.play()
+    }
+
     // When a movie or episode ends: remember it as finished, then go on to the next episode if there is one.
     LaunchedEffect(endedTick) {
         if (endedTick > 0) {
             saveProgress(finished = true)
             val cur = items[index]
-            if (cur.kind == PlayKind.EPISODE && index < items.lastIndex) index++ else overlay = true
+            if (cur.kind == PlayKind.EPISODE && index < items.lastIndex && extras.autoNext) index++ else overlay = true
         }
     }
 
@@ -629,7 +682,7 @@ fun PlayerScreen(
                 Key.DirectionDown -> if (isLive) step(-1) else false
                 Key.DirectionLeft -> seekBy(-10_000)
                 Key.DirectionRight -> if (isLive && items.size > 1) { openMini(); true } else seekBy(10_000)
-                Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> { overlay = true; true }
+                Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> { if (skipLabel != null) { doSkip(); true } else { overlay = true; true } }
                 else -> false
             }
         } else {
@@ -683,6 +736,15 @@ fun PlayerScreen(
                     ) { _, amount -> total += amount }
                 }
         )
+
+        // Skip intro / recap / next episode, in the corner while it applies.
+        if (skipLabel != null && picker == null && !miniOpen) {
+            PlayerButton(
+                skipLabel + if (!overlay) "  (OK)" else "",
+                Modifier.align(Alignment.BottomEnd).padding(end = 32.dp, bottom = if (overlay) 170.dp else 48.dp).width(230.dp),
+                accent = true,
+            ) { doSkip() }
+        }
 
         // The mini guide: nearby channels along the bottom, with what is on now and next.
         if (miniOpen && miniEntries.isNotEmpty()) {
@@ -901,21 +963,54 @@ fun PlayerScreen(
         picker?.let { type ->
             val options = trackOptions(tracks, type)
             val rows = ArrayList<PickerRow>()
-            if (type == C.TRACK_TYPE_TEXT) {
-                rows += PickerRow("Off", options.none { it.selected }) {
-                    exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
-                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-                        .build()
-                    picker = null
+            val online = type == C.TRACK_TYPE_TEXT && subMode
+            if (online) {
+                subResults.forEach { r ->
+                    rows += PickerRow(r.label.take(60) + (if (r.language.isNotBlank()) "  [${r.language}]" else ""), false) {
+                        subMode = false
+                        picker = null
+                        statusMessage = "Downloading subtitle..."
+                        scope.launch {
+                            val file = extras.downloadSubtitle(item, r)
+                            if (file != null) {
+                                attachSubtitle(file)
+                                statusMessage = null
+                            } else {
+                                statusMessage = "Couldn't download that subtitle."
+                            }
+                        }
+                    }
                 }
-            }
-            options.forEach { opt ->
-                rows += PickerRow(opt.label, opt.selected) {
-                    exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
-                        .setTrackTypeDisabled(opt.group.type, false)
-                        .setOverrideForType(TrackSelectionOverride(opt.group.mediaTrackGroup, opt.index))
-                        .build()
-                    picker = null
+            } else {
+                if (type == C.TRACK_TYPE_TEXT) {
+                    rows += PickerRow("Off", options.none { it.selected }) {
+                        exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
+                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                            .build()
+                        picker = null
+                    }
+                }
+                options.forEach { opt ->
+                    rows += PickerRow(opt.label, opt.selected) {
+                        exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
+                            .setTrackTypeDisabled(opt.group.type, false)
+                            .setOverrideForType(TrackSelectionOverride(opt.group.mediaTrackGroup, opt.index))
+                            .build()
+                        picker = null
+                    }
+                }
+                if (type == C.TRACK_TYPE_TEXT && extras.subtitleSearchOn && item.kind != PlayKind.LIVE) {
+                    rows += PickerRow("Search online...", false) {
+                        subMode = true
+                        subBusy = true
+                        subResults = emptyList()
+                        subMessage = ""
+                        scope.launch {
+                            subResults = runCatching { extras.searchSubtitles(item) }.getOrDefault(emptyList())
+                            subBusy = false
+                            if (subResults.isEmpty()) subMessage = "No subtitles found for this one."
+                        }
+                    }
                 }
             }
             Column(
@@ -928,12 +1023,14 @@ fun PlayerScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text(
-                    if (type == C.TRACK_TYPE_AUDIO) "Audio" else "Subtitles",
+                    if (type == C.TRACK_TYPE_AUDIO) "Audio" else if (online) "Subtitles online" else "Subtitles",
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                     color = Palette.TextPrimary,
                 )
-                if (rows.isEmpty()) {
+                if (online && rows.isEmpty()) {
+                    Text(if (subBusy) "Searching..." else subMessage, fontSize = 15.sp, color = Palette.TextSecondary)
+                } else if (rows.isEmpty()) {
                     Text("This one has no other audio tracks.", fontSize = 15.sp, color = Palette.TextSecondary)
                 } else {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -948,7 +1045,7 @@ fun PlayerScreen(
                         }
                     }
                 }
-                if (type == C.TRACK_TYPE_TEXT && options.isEmpty()) {
+                if (type == C.TRACK_TYPE_TEXT && !online && options.isEmpty()) {
                     Text("This one has no subtitles.", fontSize = 14.sp, color = Palette.TextSecondary)
                 }
             }
@@ -1008,4 +1105,19 @@ private fun trackLabel(format: Format, number: Int): String {
         ?.let { Locale.forLanguageTag(it).displayLanguage }
         ?.takeIf { it.isNotBlank() }
     return format.label ?: language ?: "Track $number"
+}
+
+/** A stream, with a subtitle file attached if there is one. */
+private fun subtitleItem(url: String, file: java.io.File?): MediaItem {
+    if (file == null) return MediaItem.fromUri(url)
+    val mime = when (file.extension.lowercase()) {
+        "vtt" -> MimeTypes.TEXT_VTT
+        "ass", "ssa" -> MimeTypes.TEXT_SSA
+        else -> MimeTypes.APPLICATION_SUBRIP
+    }
+    val subtitle = MediaItem.SubtitleConfiguration.Builder(android.net.Uri.fromFile(file))
+        .setMimeType(mime)
+        .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+        .build()
+    return MediaItem.Builder().setUri(url).setSubtitleConfigurations(listOf(subtitle)).build()
 }
