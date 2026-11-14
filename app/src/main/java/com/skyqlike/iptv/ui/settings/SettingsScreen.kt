@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -72,7 +73,9 @@ fun SettingsScreen(
 
     when (page) {
         "providers" -> providersContent()
-        "playback" -> PlaybackPage(settings, onChange)
+        "playback" -> PlayerPage(settings, onChange)
+        "sound" -> SoundPage(settings, onChange)
+        "live" -> LivePage(settings, onChange)
         "parental" -> ParentalPage(settings, onChange, adultUnlocked, onAdultUnlockedChange)
         "team" -> TeamPage(settings, onChange)
         "artwork" -> ArtworkPage(settings, onChange, onTestTmdb)
@@ -86,13 +89,19 @@ fun SettingsScreen(
                 else -> "PIN set - adult categories hidden"
             }
             LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                item { SectionTitle("Your content") }
                 item { SettingRow("IPTV providers", summary = "In use: $providerName") { page = "providers" } }
-                item { SettingRow("Playback", summary = "Picture size, subtitles, audio language, reconnecting") { page = "playback" } }
-                item { SettingRow("My Team", value = settings.myTeam.split(',').first().trim(), summary = "Follow your team: games on the Home page and reminders") { page = "team" } }
+                item { SettingRow("Channels", summary = "$visibleCount of ${allChannels.size} channels shown. Hide, reorder, favourites.") { page = "channels" } }
+                item { SettingRow("Data and backup", summary = "Refresh the playlist or TV guide, back up, clear saved data") { page = "data" } }
+                item { SectionTitle("Watching") }
+                item { SettingRow("Player", summary = "Picture size, reconnecting, resume") { page = "playback" } }
+                item { SettingRow("Sound and subtitles", summary = "Audio language, subtitles") { page = "sound" } }
+                item { SettingRow("Live TV", summary = "Starting channel, rewind, recording") { page = "live" } }
+                item { SectionTitle("Personal") }
+                item { SettingRow("My Team and alerts", value = settings.myTeam.split(',').first().trim(), summary = "Your team's games, reminders and goal alerts") { page = "team" } }
                 item { SettingRow("Artwork (TMDB)", value = if (settings.tmdbKey.isBlank()) "Off" else "On", summary = "Posters and banners for movies and shows") { page = "artwork" } }
-                item { SettingRow("Channels", summary = "$visibleCount of ${allChannels.size} channels shown. Hide and reorder.") { page = "channels" } }
                 item { SettingRow("Parental controls", summary = parentalSummary) { page = "parental" } }
-                item { SettingRow("Data and refresh", summary = "Refresh the playlist or TV guide, clear saved data") { page = "data" } }
+                item { SectionTitle("App") }
                 item { SettingRow("About", summary = "Version and details") { page = "about" } }
             }
         }
@@ -148,6 +157,37 @@ private fun SettingRow(title: String, value: String = "", summary: String = "", 
 
 private fun onOff(value: Boolean) = if (value) "On" else "Off"
 
+@Composable
+private fun SectionTitle(text: String) {
+    Text(
+        text.uppercase(),
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Bold,
+        color = Palette.Accent,
+        modifier = Modifier.padding(top = 10.dp, bottom = 2.dp, start = 4.dp),
+    )
+}
+
+/** "Reset this page": puts only the settings on this page back to how they came. Needs a second press so it can't happen by accident. */
+@Composable
+private fun ResetRow(onReset: () -> Unit) {
+    var sure by remember { mutableStateOf(false) }
+    FocusTile(
+        onClick = { if (sure) { sure = false; onReset() } else sure = true },
+        modifier = Modifier.fillMaxWidth().height(52.dp),
+        corner = 10.dp,
+        focusedScale = 1.02f,
+        backgroundColor = if (sure) Color(0xFF8A1F2B) else Palette.Panel,
+    ) {
+        Text(
+            if (sure) "Press again to reset this page" else "Reset this page to the original settings",
+            fontSize = 16.sp,
+            color = Palette.TextPrimary,
+            modifier = Modifier.align(Alignment.Center),
+        )
+    }
+}
+
 // ---------------------------------------------------------------- playback
 
 private val AspectNames = listOf("Fit", "Zoom", "Stretch")
@@ -157,9 +197,9 @@ private val AudioLanguages = listOf(
 )
 
 @Composable
-private fun PlaybackPage(settings: AppSettings, onChange: (AppSettings) -> Unit) {
-    val langIndex = AudioLanguages.indexOfFirst { it.first == settings.audioLang }.coerceAtLeast(0)
-    Page("Playback", "Changes apply the next time you start playing something.") {
+private fun PlayerPage(settings: AppSettings, onChange: (AppSettings) -> Unit) {
+    val d = AppSettings()
+    Page("Player", "Changes apply the next time you start playing something.") {
         LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
                 SettingRow(
@@ -178,11 +218,17 @@ private fun PlaybackPage(settings: AppSettings, onChange: (AppSettings) -> Unit)
                     onChange(settings.copy(resume = !settings.resume))
                 }
             }
-            item {
-                SettingRow("Open on last channel", onOff(settings.openOnLastChannel), "When the app starts, go straight to the live channel you watched last.") {
-                    onChange(settings.copy(openOnLastChannel = !settings.openOnLastChannel))
-                }
-            }
+            item { ResetRow { onChange(settings.copy(aspect = d.aspect, autoReconnect = d.autoReconnect, resume = d.resume)) } }
+        }
+    }
+}
+
+@Composable
+private fun SoundPage(settings: AppSettings, onChange: (AppSettings) -> Unit) {
+    val d = AppSettings()
+    val langIndex = AudioLanguages.indexOfFirst { it.first == settings.audioLang }.coerceAtLeast(0)
+    Page("Sound and subtitles", "Changes apply the next time you start playing something.") {
+        LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
                 SettingRow("Subtitles on by default", onOff(settings.subtitlesOn), "When a stream has subtitles, show them straight away.") {
                     onChange(settings.copy(subtitlesOn = !settings.subtitlesOn))
@@ -195,6 +241,22 @@ private fun PlaybackPage(settings: AppSettings, onChange: (AppSettings) -> Unit)
                     "Used when a stream offers more than one language.",
                 ) { onChange(settings.copy(audioLang = AudioLanguages[(langIndex + 1) % AudioLanguages.size].first)) }
             }
+            item { ResetRow { onChange(settings.copy(subtitlesOn = d.subtitlesOn, audioLang = d.audioLang)) } }
+        }
+    }
+}
+
+@Composable
+private fun LivePage(settings: AppSettings, onChange: (AppSettings) -> Unit) {
+    val d = AppSettings()
+    Page("Live TV", "How live channels start and behave.") {
+        LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            item {
+                SettingRow("Open on last channel", onOff(settings.openOnLastChannel), "When the app starts, go straight to the live channel you watched last.") {
+                    onChange(settings.copy(openOnLastChannel = !settings.openOnLastChannel))
+                }
+            }
+            item { ResetRow { onChange(settings.copy(openOnLastChannel = d.openOnLastChannel)) } }
         }
     }
 }
@@ -205,7 +267,7 @@ private fun PlaybackPage(settings: AppSettings, onChange: (AppSettings) -> Unit)
 private fun TeamPage(settings: AppSettings, onChange: (AppSettings) -> Unit) {
     var team by remember { mutableStateOf(settings.myTeam) }
     var saved by remember { mutableStateOf("") }
-    Page("My Team", "Games that name your team in the TV guide show up on the Home page, with a reminder before kick-off.") {
+    Page("My Team and alerts", "Games that name your team in the TV guide show up on the Home page, with a reminder before kick-off.") {
         LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             item { LabeledField("Team name", team) { team = it } }
             item {
@@ -237,6 +299,7 @@ private fun TeamPage(settings: AppSettings, onChange: (AppSettings) -> Unit) {
                     "An alert 5 minutes before kick-off. Tap it to open the channel.",
                 ) { onChange(settings.copy(teamReminders = !settings.teamReminders)) }
             }
+            item { ResetRow { team = ""; onChange(settings.copy(myTeam = "", teamReminders = AppSettings().teamReminders)) } }
         }
     }
 }
