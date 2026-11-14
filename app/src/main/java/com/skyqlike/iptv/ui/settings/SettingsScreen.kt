@@ -718,6 +718,7 @@ private fun AboutPage(providerName: String, visibleCount: Int, totalCount: Int) 
             AboutLine("Version", version)
             AboutLine("Provider in use", providerName)
             AboutLine("Channels shown", "$visibleCount of $totalCount")
+            AboutLine("Memory", com.skyqlike.iptv.data.Mem.label(context))
             Text(
                 "A personal IPTV player. It ships with no channels or branding of its own. " +
                     "The sample playlist uses public test videos.",

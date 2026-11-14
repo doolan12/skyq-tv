@@ -85,6 +85,14 @@ class MainActivity : ComponentActivity() {
         listOf("stremio", "stremio_favourites").forEach {
             getSharedPreferences(it, MODE_PRIVATE).edit().clear().apply()
         }
+        // Small-memory devices (1 GB sticks) keep fewer pictures in memory.
+        val lowMemory = com.skyqlike.iptv.data.Mem.tier(this) == 0
+        coil.Coil.setImageLoader(
+            coil.ImageLoader.Builder(this)
+                .memoryCache { coil.memory.MemoryCache.Builder(this).maxSizePercent(if (lowMemory) 0.08 else 0.20).build() }
+                .allowRgb565(lowMemory)
+                .build()
+        )
         val phone = isPhoneLike()
         // Phones can be held either way up. TVs are always sideways.
         requestedOrientation = if (phone) android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
@@ -113,6 +121,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 var providers by remember { mutableStateOf(store.all()) }
+                remember(providers) { com.skyqlike.iptv.data.provider.HostFailover.configure(providers) }
                 var activeId by remember { mutableStateOf(store.activeId()) }
                 var channels by remember { mutableStateOf<List<Channel>>(sample) }
                 var epg by remember { mutableStateOf<Map<String, List<Programme>>>(emptyMap()) }

@@ -93,7 +93,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private const val MAX_RETRIES = 5
+private const val MAX_RETRIES = 6
 
 /** The sleep timer choices, in minutes. */
 private val SleepChoicesMin = listOf(15, 30, 60, 90)
@@ -204,6 +204,8 @@ fun PlayerScreen(
     var miniTick by remember { mutableIntStateOf(0) }
 
     val attempts = remember { intArrayOf(0) }
+    // The address actually playing. With backup servers this can differ from the item's own address.
+    val playingUrl = remember { arrayOf("") }
     val token = remember { intArrayOf(0) }
     val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
 
@@ -214,8 +216,10 @@ fun PlayerScreen(
             .setConnectTimeoutMs(15_000)
             .setReadTimeoutMs(15_000)
         // Starts playing after about a second of picture instead of two and a half, so channel changes are quicker.
+        val low = com.skyqlike.iptv.data.Mem.tier(context) == 0
         val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(15_000, 50_000, 1_000, 3_000)
+            .setBufferDurationsMs(if (low) 10_000 else 15_000, if (low) 30_000 else 50_000, 1_000, 3_000)
+            .also { if (low) it.setTargetBufferBytes(24 * 1024 * 1024) }
             .build()
         ExoPlayer.Builder(context)
             .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(androidx.media3.datasource.DefaultDataSource.Factory(context, http)))
@@ -268,6 +272,22 @@ fun PlayerScreen(
             override fun onPlayerError(error: PlaybackException) {
                 // A refused login or a missing stream won't fix itself, so don't keep retrying those.
                 val worthRetrying = httpStatusOf(error) !in setOf(401, 403, 404)
+                // If the provider has backup servers, move this stream over to one that is answering.
+                if (worthRetrying && attempts[0] < MAX_RETRIES) {
+                    val cur = items[index]
+                    val alt = com.skyqlike.iptv.data.provider.HostFailover.alternativeAfterFailure(playingUrl[0].ifBlank { cur.url })
+                    if (alt != null) {
+                        attempts[0]++
+                        playingUrl[0] = alt
+                        statusMessage = "Trying another server..."
+                        buffering = true
+                        val pos = exo.currentPosition
+                        if (cur.kind == PlayKind.LIVE || pos <= 0L) exo.setMediaItem(MediaItem.fromUri(alt)) else exo.setMediaItem(MediaItem.fromUri(alt), pos)
+                        exo.prepare()
+                        exo.play()
+                        return
+                    }
+                }
                 if (autoReconnect && worthRetrying && attempts[0] < MAX_RETRIES) {
                     attempts[0]++
                     val myToken = token[0]
@@ -275,7 +295,7 @@ fun PlayerScreen(
                     statusMessage = "Connection lost. Reconnecting ($n of $MAX_RETRIES)..."
                     buffering = true
                     scope.launch {
-                        delay(2000L * n)
+                        delay((1000L * n).coerceAtMost(5000L))
                         if (myToken == token[0]) {
                             if (items[index].kind == PlayKind.LIVE) exo.seekToDefaultPosition()
                             exo.prepare()
@@ -295,6 +315,32 @@ fun PlayerScreen(
             saveProgress()
             exo.removeListener(listener)
             exo.release()
+        }
+    }
+
+    // When the network comes back (Wi-Fi switch, router restart, waking from standby), reconnect without waiting.
+    DisposableEffect(exo) {
+        val cm = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        val callback = object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) {
+                handler.post {
+                    if (failed || statusMessage != null) {
+                        attempts[0] = 0
+                        failed = false
+                        statusMessage = "Network is back. Reconnecting..."
+                        buffering = true
+                        if (items[index].kind == PlayKind.LIVE) exo.seekToDefaultPosition()
+                        exo.prepare()
+                        exo.play()
+                    }
+                }
+            }
+        }
+        val registered = runCatching { cm?.registerDefaultNetworkCallback(callback) }.isSuccess
+        onDispose {
+            if (registered) runCatching { cm?.unregisterNetworkCallback(callback) }
+            handler.removeCallbacksAndMessages(null)
         }
     }
 
@@ -373,7 +419,8 @@ fun PlayerScreen(
         buffering = true
         positionMs = 0L
         durationMs = 0L
-        val mediaItem = MediaItem.fromUri(cur.url)
+        playingUrl[0] = com.skyqlike.iptv.data.provider.HostFailover.candidates(cur.url).first()
+        val mediaItem = MediaItem.fromUri(playingUrl[0])
         val resumeAt = if (cur.kind == PlayKind.MOVIE || cur.kind == PlayKind.EPISODE) startPositionFor(cur) else 0L
         if (resumeAt > 0L) exo.setMediaItem(mediaItem, resumeAt) else exo.setMediaItem(mediaItem)
         exo.prepare()

@@ -60,7 +60,10 @@ class PlaylistRepository(private val context: Context) {
             }
         }
 
-    private fun httpGet(address: String): String {
+    private fun httpGet(address: String): String =
+        com.skyqlike.iptv.data.provider.HostFailover.tryServers(address) { httpGetOnce(it) }
+
+    private fun httpGetOnce(address: String): String {
         val conn = URL(address).openConnection() as HttpURLConnection
         conn.connectTimeout = 15_000
         conn.readTimeout = 45_000

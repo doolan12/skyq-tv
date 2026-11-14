@@ -111,10 +111,19 @@ fun ProvidersScreen(
                             Text(p.name, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary)
                             Text(
                                 (if (p.type == ProviderType.XTREAM) "Xtream login" else "M3U link") +
+                                    (if (p.backupUrls.isNotEmpty()) "  -  ${p.backupUrls.size} backup server" + (if (p.backupUrls.size > 1) "s" else "") else "") +
                                     if (isActive) "  -  In use" else "",
                                 fontSize = 14.sp,
                                 color = if (isActive) Palette.Accent else Palette.TextSecondary,
                             )
+                            val downNow = com.skyqlike.iptv.data.provider.HostFailover.statusOf(p).filter { it.second }
+                            if (downNow.isNotEmpty()) {
+                                Text(
+                                    "Not answering lately: " + downNow.joinToString { it.first.substringAfter("://") },
+                                    fontSize = 13.sp,
+                                    color = Color(0xFFFF8A8A),
+                                )
+                            }
                         }
                         ActionButton(if (isActive) "In use" else "Use", Modifier.width(100.dp), accent = isActive) {
                             if (!isActive) onUse(p)
@@ -146,6 +155,7 @@ private fun ProviderForm(initial: Provider?, onSave: (Provider) -> Unit, onCance
     var user by remember { mutableStateOf(initial?.username ?: "") }
     var pass by remember { mutableStateOf(initial?.password ?: "") }
     var epg by remember { mutableStateOf(initial?.epgUrl ?: "") }
+    var backups by remember { mutableStateOf(initial?.backupUrls?.joinToString(", ") ?: "") }
     var error by remember { mutableStateOf<String?>(null) }
 
     Column(
@@ -171,6 +181,14 @@ private fun ProviderForm(initial: Provider?, onSave: (Provider) -> Unit, onCance
             LabeledField("Username", user) { user = it }
             LabeledField("Password", pass, password = true) { pass = it }
         }
+        if (type == ProviderType.XTREAM) {
+            LabeledField("Backup servers, optional (separate with commas)", backups) { backups = it }
+            Text(
+                "Other addresses of the same provider, with the same username and password. If the main server stops answering, the app switches by itself.",
+                fontSize = 13.sp,
+                color = Palette.TextSecondary,
+            )
+        }
         LabeledField("EPG (TV guide) link, optional", epg) { epg = it }
         error?.let { Text(it, fontSize = 15.sp, color = Color(0xFFFF6B6B)) }
         Text("Only add playlists you have the right to use.", fontSize = 13.sp, color = Palette.TextSecondary)
@@ -192,6 +210,10 @@ private fun ProviderForm(initial: Provider?, onSave: (Provider) -> Unit, onCance
                                 username = user.trim(),
                                 password = pass,
                                 epgUrl = epg.trim(),
+                                backupUrls = if (type == ProviderType.XTREAM) {
+                                    backups.split(',', '\n', ' ').map { it.trim() }.filter { it.isNotEmpty() }
+                                        .map { if (it.startsWith("http", ignoreCase = true)) it else "http://$it" }
+                                } else emptyList(),
                             )
                         )
                     }

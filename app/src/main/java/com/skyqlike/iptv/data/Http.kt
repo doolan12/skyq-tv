@@ -1,6 +1,7 @@
 package com.skyqlike.iptv.data
 
 import org.json.JSONException
+import com.skyqlike.iptv.data.provider.HostFailover
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
@@ -10,7 +11,10 @@ import java.net.UnknownHostException
 /** One simple way to fetch a web address as text, plus plain-English error messages. */
 internal object Http {
 
-    fun get(address: String, readTimeoutMs: Int = 60_000, userAgent: String? = null): String {
+    fun get(address: String, readTimeoutMs: Int = 60_000, userAgent: String? = null): String =
+        HostFailover.tryServers(address) { getOnce(it, readTimeoutMs, userAgent) }
+
+    private fun getOnce(address: String, readTimeoutMs: Int, userAgent: String?): String {
         val conn = URL(address).openConnection() as HttpURLConnection
         conn.connectTimeout = 15_000
         conn.readTimeout = readTimeoutMs

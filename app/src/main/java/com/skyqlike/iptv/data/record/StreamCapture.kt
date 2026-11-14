@@ -49,7 +49,10 @@ class StreamCapture(private val url: String, private val file: File, private val
     }
 
     /** Opens an address and follows redirects by hand, including ones that switch between http and https. */
-    private fun open(address: String): HttpURLConnection {
+    private fun open(address: String): HttpURLConnection =
+        com.skyqlike.iptv.data.provider.HostFailover.tryServers(address) { openOnce(it) }
+
+    private fun openOnce(address: String): HttpURLConnection {
         var target = address
         repeat(6) {
             val c = URL(target).openConnection() as HttpURLConnection

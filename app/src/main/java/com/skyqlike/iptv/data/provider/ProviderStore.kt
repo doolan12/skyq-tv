@@ -34,6 +34,7 @@ class ProviderStore(context: Context) {
                     username = Secure.unlock(rawUser),
                     password = Secure.unlock(rawPass),
                     epgUrl = Secure.unlock(rawEpg),
+                    backupUrls = o.optJSONArray("backups")?.let { a -> (0 until a.length()).map { Secure.unlock(a.getString(it)) } }.orEmpty(),
                 )
             }
         } catch (e: Exception) {
@@ -56,6 +57,7 @@ class ProviderStore(context: Context) {
                     .put("username", Secure.lock(p.username))
                     .put("password", Secure.lock(p.password))
                     .put("epgUrl", Secure.lock(p.epgUrl))
+                    .put("backups", JSONArray().also { a -> p.backupUrls.forEach { a.put(Secure.lock(it)) } })
             )
         }
         prefs.edit().putString("list", arr.toString()).apply()

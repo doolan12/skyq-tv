@@ -15,4 +15,6 @@ data class Provider(
     val username: String = "",
     val password: String = "",
     val epgUrl: String = "",
+    /** Other server addresses of the same provider (Xtream only). Used if the main server stops answering. */
+    val backupUrls: List<String> = emptyList(),
 )

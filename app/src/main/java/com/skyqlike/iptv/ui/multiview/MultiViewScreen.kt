@@ -138,7 +138,7 @@ private fun rememberPane(): Pane {
             .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(http))
             .build()
         // Two pictures at once is a lot of work for a TV box, so each one is held to HD.
-        exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon().setMaxVideoSize(1280, 720).build()
+        exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon().setMaxVideoSize(if (com.skyqlike.iptv.data.Mem.tier(context) == 0) 854 else 1280, if (com.skyqlike.iptv.data.Mem.tier(context) == 0) 480 else 720).build()
         Pane(exo)
     }
     DisposableEffect(pane) { onDispose { pane.release() } }

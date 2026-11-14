@@ -207,7 +207,10 @@ class EpgRepository(private val context: Context) {
         return null
     }
 
-    private fun download(address: String, target: File) {
+    private fun download(address: String, target: File) =
+        com.skyqlike.iptv.data.provider.HostFailover.tryServers(address) { downloadOnce(it, target) }
+
+    private fun downloadOnce(address: String, target: File) {
         val conn = URL(address).openConnection() as HttpURLConnection
         conn.connectTimeout = 15_000
         conn.readTimeout = 120_000
