@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import com.skyqlike.iptv.data.lists.ChannelList
 import com.skyqlike.iptv.data.model.Channel
+import com.skyqlike.iptv.data.model.favKey
 import com.skyqlike.iptv.ui.channels.FavMove
 import com.skyqlike.iptv.ui.channels.FavouritesScreen
 import com.skyqlike.iptv.ui.home.FocusTile
