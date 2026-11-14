@@ -214,6 +214,10 @@ fun PlayerScreen(
     val token = remember { intArrayOf(0) }
     val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
 
+    val shift = remember { arrayOfNulls<com.skyqlike.iptv.data.timeshift.Timeshift>(1) }
+    var shiftOn by remember { mutableStateOf(false) }
+    var behindMs by remember { mutableStateOf(0L) }
+
     val exo = remember {
         val http = DefaultHttpDataSource.Factory()
             .setUserAgent("Mozilla/5.0 (Linux; Android) SkyQLikeIPTV/0.1")
@@ -319,6 +323,7 @@ fun PlayerScreen(
         onDispose {
             saveProgress()
             exo.removeListener(listener)
+            shift[0]?.stop()
             exo.release()
         }
     }
@@ -429,7 +434,30 @@ fun PlayerScreen(
         if (savedSub != null) {
             exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).build()
         }
-        val mediaItem = subtitleItem(playingUrl[0], savedSub)
+        var mediaItem = subtitleItem(playingUrl[0], savedSub)
+        shift[0]?.stop()
+        shift[0] = null
+        shiftOn = false
+        behindMs = 0L
+        if (cur.kind == PlayKind.LIVE && extras.rewindMb > 0 && com.skyqlike.iptv.data.Mem.tier(context) > 0 &&
+            playingUrl[0].substringBefore('?').endsWith(".m3u8")
+        ) {
+            val root = (context.getExternalFilesDir(null) ?: context.cacheDir).resolve("timeshift")
+            val engine = com.skyqlike.iptv.data.timeshift.Timeshift(playingUrl[0], root.resolve("ch"), extras.rewindMb * 1024L * 1024L)
+            engine.start()
+            var waited = 0
+            while (!engine.ready && !engine.failed && waited < 10_000) {
+                delay(250)
+                waited += 250
+            }
+            if (engine.ready) {
+                shift[0] = engine
+                shiftOn = true
+                mediaItem = MediaItem.Builder().setUri(android.net.Uri.fromFile(engine.playlistFile)).setMimeType(MimeTypes.APPLICATION_M3U8).build()
+            } else {
+                engine.stop()
+            }
+        }
         val resumeAt = if (cur.kind == PlayKind.MOVIE || cur.kind == PlayKind.EPISODE) startPositionFor(cur) else 0L
         if (resumeAt > 0L) exo.setMediaItem(mediaItem, resumeAt) else exo.setMediaItem(mediaItem)
         exo.prepare()
@@ -452,6 +480,22 @@ fun PlayerScreen(
         while (true) {
             delay(1000)
             ticks++
+            val eng = shift[0]
+            if (eng != null) {
+                if (eng.broken) {
+                    // The saved copy stopped growing: go back to playing the channel directly.
+                    eng.stop()
+                    shift[0] = null
+                    shiftOn = false
+                    behindMs = 0L
+                    exo.setMediaItem(MediaItem.fromUri(playingUrl[0].ifBlank { items[index].url }))
+                    exo.prepare()
+                    exo.play()
+                } else {
+                    val lo = exo.currentLiveOffset
+                    behindMs = if (lo != C.TIME_UNSET) lo else (exo.duration.takeIf { it != C.TIME_UNSET && it > 0 }?.minus(exo.currentPosition) ?: 0L)
+                }
+            }
             if (items[index].kind != PlayKind.LIVE) {
                 positionMs = exo.currentPosition
                 durationMs = exo.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0L
@@ -681,7 +725,7 @@ fun PlayerScreen(
                 Key.DirectionUp -> if (isLive) step(1) else false
                 Key.DirectionDown -> if (isLive) step(-1) else false
                 Key.DirectionLeft -> seekBy(-10_000)
-                Key.DirectionRight -> if (isLive && items.size > 1) { openMini(); true } else seekBy(10_000)
+                Key.DirectionRight -> if (isLive && shiftOn && behindMs > 25_000L) seekBy(10_000) else if (isLive && items.size > 1) { openMini(); true } else seekBy(10_000)
                 Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> { if (skipLabel != null) { doSkip(); true } else { overlay = true; true } }
                 else -> false
             }
@@ -892,6 +936,14 @@ fun PlayerScreen(
                     if (seekable) {
                         PlayerButton("-10s", Modifier.width(80.dp)) { bump(); seekBy(-10_000) }
                         PlayerButton("+10s", Modifier.width(80.dp)) { bump(); seekBy(10_000) }
+                    }
+                    if (isLive && shiftOn) {
+                        val behindSec = (behindMs / 1000).toInt()
+                        PlayerButton(if (behindMs > 25_000L) "Go live (${behindSec / 60}:${"%02d".format(behindSec % 60)} behind)" else "Live", Modifier.width(if (behindMs > 25_000L) 220.dp else 90.dp)) {
+                            bump()
+                            exo.seekToDefaultPosition()
+                            exo.play()
+                        }
                     }
                     if (isLive) {
                         PlayerButton(if (recActive) "Stop rec" else "Record", Modifier.width(110.dp)) {

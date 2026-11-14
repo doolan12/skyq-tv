@@ -33,6 +33,8 @@ data class AppSettings(
     val teamReminders: Boolean = true,
     /** Show a Skip intro button on episodes that have one. */
     val skipIntro: Boolean = true,
+    /** Disk space for pausing and rewinding live TV, in MB. 0 = off. */
+    val rewindMb: Int = 0,
     /** Skip intros and recaps by itself. */
     val autoSkipIntro: Boolean = false,
     /** Start the next episode when one ends. */
@@ -72,6 +74,7 @@ class SettingsStore(context: Context) {
         myTeam = prefs.getString("myTeam", "") ?: "",
         teamReminders = prefs.getBoolean("teamReminders", true),
         skipIntro = prefs.getBoolean("skipIntro", true),
+        rewindMb = prefs.getInt("rewindMb", 0),
         autoSkipIntro = prefs.getBoolean("autoSkipIntro", false),
         autoNext = prefs.getBoolean("autoNext", true),
         subdlKey = Secure.unlock(prefs.getString("subdlKey", "") ?: ""),
@@ -98,6 +101,7 @@ class SettingsStore(context: Context) {
             .putString("myTeam", s.myTeam)
             .putBoolean("teamReminders", s.teamReminders)
             .putBoolean("skipIntro", s.skipIntro)
+            .putInt("rewindMb", s.rewindMb)
             .putBoolean("autoSkipIntro", s.autoSkipIntro)
             .putBoolean("autoNext", s.autoNext)
             .putString("subdlKey", Secure.lock(s.subdlKey))

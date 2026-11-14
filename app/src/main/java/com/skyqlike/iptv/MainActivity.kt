@@ -742,6 +742,7 @@ class MainActivity : ComponentActivity() {
                             favouriteKeys = favourites,
                             startPositionFor = { if (settings.resume) historyStore.positionFor(it.key) else 0L },
                             extras = com.skyqlike.iptv.ui.player.PlayerExtras(
+                                rewindMb = settings.rewindMb,
                                 skipIntro = settings.skipIntro,
                                 autoSkipIntro = settings.autoSkipIntro,
                                 autoNext = settings.autoNext,

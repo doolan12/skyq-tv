@@ -7,6 +7,8 @@ import java.io.File
 
 /** Optional player features, handed to the player in one piece so its signature stays readable. */
 class PlayerExtras(
+    /** Disk space for rewinding live TV in MB (0 = off). */
+    val rewindMb: Int = 0,
     /** Show a "Skip intro" button where the episode has one. */
     val skipIntro: Boolean = true,
     /** Skip intros and recaps without waiting to be asked. */

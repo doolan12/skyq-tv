@@ -301,7 +301,14 @@ private fun LivePage(settings: AppSettings, onChange: (AppSettings) -> Unit) {
                     onChange(settings.copy(openOnLastChannel = !settings.openOnLastChannel))
                 }
             }
-            item { ResetRow { onChange(settings.copy(openOnLastChannel = d.openOnLastChannel)) } }
+            item {
+                val label = if (settings.rewindMb == 0) "Off" else if (settings.rewindMb >= 1024) "1 GB" else "${settings.rewindMb} MB"
+                SettingRow("Pause and rewind live TV", label, "Saves live TV to storage so you can pause and go back. Experimental.") {
+                    val next = when (settings.rewindMb) { 0 -> 256; 256 -> 512; 512 -> 1024; else -> 0 }
+                    onChange(settings.copy(rewindMb = next))
+                }
+            }
+            item { ResetRow { onChange(settings.copy(openOnLastChannel = d.openOnLastChannel, rewindMb = d.rewindMb)) } }
         }
     }
 }
