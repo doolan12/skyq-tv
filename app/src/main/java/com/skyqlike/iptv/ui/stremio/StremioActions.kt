@@ -15,6 +15,8 @@ class StremioActions(
     val onAddAddon: suspend (link: String) -> String?,
     val onRemoveAddon: (link: String) -> Unit,
     val search: suspend (query: String) -> List<StremioItem>,
+    /** Rows of films and shows for actors and directors whose name matches the search. */
+    val searchPeople: suspend (query: String) -> List<StremioRow> = { emptyList() },
     val onToggleFavourite: (StremioItem) -> Unit,
     val byGenre: suspend (type: String, genre: String) -> List<StremioRow>,
     val loadDetails: suspend (StremioItem) -> StremioItem,

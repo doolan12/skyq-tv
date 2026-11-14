@@ -162,6 +162,68 @@ class TmdbRepository {
         }.awaitAll().filterNotNull().take(10)
     }
 
+    /**
+     * Actors and directors matching a search, with the films and shows they are known for.
+     * Only people whose name contains every word typed are used, so a title search doesn't pull in strangers.
+     */
+    suspend fun people(apiKey: String, query: String): List<StremioRow> = withContext(Dispatchers.IO) {
+        val k = apiKey.trim()
+        if (k.isEmpty()) return@withContext emptyList<StremioRow>()
+        runCatching {
+            val words = query.lowercase().split(' ').filter { it.isNotBlank() }
+            val found = JSONObject(Http.getCached("$BASE/search/person?api_key=${enc(k)}&language=en-US&include_adult=false&query=${enc(query)}", 12_000, 6_000, false))
+                .optJSONArray("results") ?: return@runCatching emptyList<StremioRow>()
+            val people = ArrayList<JSONObject>()
+            for (i in 0 until found.length()) {
+                val o = found.optJSONObject(i) ?: continue
+                val name = (str(o, "name") ?: continue).lowercase()
+                val dept = str(o, "known_for_department")
+                if (words.all { it in name } && (dept == "Acting" || dept == "Directing" || dept == "Writing")) people += o
+                if (people.size >= 2) break
+            }
+            val rows = ArrayList<StremioRow>()
+            coroutineScope {
+                people.map { person ->
+                    async {
+                        runCatching {
+                            val id = person.getInt("id")
+                            val name = str(person, "name") ?: return@runCatching null
+                            val directing = str(person, "known_for_department") == "Directing"
+                            val credits = JSONObject(Http.getCached("$BASE/person/$id/combined_credits?api_key=${enc(k)}&language=en-US", 12_000, 6_000, false))
+                            val src = credits.optJSONArray(if (directing) "crew" else "cast") ?: return@runCatching null
+                            val picks = ArrayList<JSONObject>()
+                            for (i in 0 until src.length()) {
+                                val o = src.optJSONObject(i) ?: continue
+                                if (str(o, "poster_path") == null) continue
+                                if (directing && str(o, "job") != "Director") continue
+                                if (!directing && (str(o, "character") ?: "").contains("Self", ignoreCase = true)) continue
+                                val genres = o.optJSONArray("genre_ids")
+                                var talk = false
+                                if (genres != null) for (g in 0 until genres.length()) if (genres.optInt(g) in intArrayOf(10767, 10763, 10764)) talk = true
+                                if (talk || o.optInt("vote_count") < 40) continue
+                                picks += o
+                            }
+                            val top = picks.distinctBy { it.optInt("id").toString() + str(it, "media_type") }
+                                .sortedByDescending { it.optDouble("popularity") }.take(24)
+                            val items = top.map { o ->
+                                async {
+                                    runCatching<StremioItem?> {
+                                        val kind = if (str(o, "media_type") == "tv") "tv" else "movie"
+                                        val ext = JSONObject(Http.getCached("$BASE/$kind/${o.getInt("id")}/external_ids?api_key=${enc(k)}", 12_000, 6_000, false))
+                                        val imdb = str(ext, "imdb_id") ?: return@runCatching null
+                                        toItem(o, imdb, kind)
+                                    }.getOrNull()
+                                }
+                            }.awaitAll().filterNotNull().take(20)
+                            if (items.isEmpty()) null else StremioRow(if (directing) "Directed by $name" else "Starring $name", "mixed", items)
+                        }.getOrNull()
+                    }
+                }.awaitAll().filterNotNull().forEach { rows += it }
+            }
+            rows
+        }.getOrDefault(emptyList())
+    }
+
     private fun toItem(o: JSONObject, imdbId: String, kind: String): StremioItem? {
         val name = str(o, "title") ?: str(o, "name") ?: return null
         return StremioItem(

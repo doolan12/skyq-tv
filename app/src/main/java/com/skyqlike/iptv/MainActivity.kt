@@ -372,6 +372,9 @@ private fun ReelApp(context: Context) {
             val addons = (stremioState as? StremioState.Ready)?.home?.addons ?: emptyList()
             stremioRepo.search(addons, query).let { found -> if (profile?.kids == true) KidsFilter.filter(found) else found }
         },
+        searchPeople = { query ->
+            if (profile?.kids == true) emptyList() else tmdbRepo.people(settings.tmdbKey, query)
+        },
         onImportLibrary = {
             stremioRepo.library(stremio.authKey).fold(
                 onSuccess = { found ->

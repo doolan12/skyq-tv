@@ -90,6 +90,7 @@ import com.skyqlike.iptv.ui.profiles.ProfileAvatar
 import com.skyqlike.iptv.ui.stremio.StremioActions
 import com.skyqlike.iptv.ui.theme.Palette
 import com.skyqlike.iptv.ui.trailer.TrailerPreview
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 
 /**
@@ -171,6 +172,7 @@ fun BrowseScreen(
     val searching = tab == TAB_SEARCH && ui.query.trim().length >= 2
 
     var results by remember { mutableStateOf<List<StremioItem>?>(null) }
+    var peopleRows by remember { mutableStateOf<List<StremioRow>>(emptyList()) }
     var genreRows by remember { mutableStateOf<List<StremioRow>?>(null) }
     var heroIndex by remember { mutableIntStateOf(0) }
     val playFocus = remember { FocusRequester() }
@@ -202,10 +204,14 @@ fun BrowseScreen(
         val q = ui.query.trim()
         if (q.length < 2) {
             results = null
+            peopleRows = emptyList()
         } else {
             results = null
+            peopleRows = emptyList()
             delay(500)
+            val people = async { runCatching { actions.searchPeople(q) }.getOrDefault(emptyList()) }
             results = runCatching { actions.search(q) }.getOrDefault(emptyList())
+            peopleRows = people.await()
             if (!results.isNullOrEmpty()) {
                 delay(1_500)
                 recent = recentStore.add(q)
@@ -507,6 +513,7 @@ fun BrowseScreen(
             val hits = results
             when {
                 tab == TAB_SEARCH -> if (searching && hits != null) {
+                    peopleRows.forEach { add(it.title, it.items) }
                     add("Movies", hits.filter { it.type == "movie" })
                     add("Series", hits.filter { it.type == "series" })
                 }
